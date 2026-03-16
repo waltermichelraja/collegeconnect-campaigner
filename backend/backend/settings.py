@@ -34,6 +34,7 @@ ALLOWED_HOSTS = []
 
 WA_ACCESS_TOKEN=os.getenv("WA_ACCESS_TOKEN", "")
 WA_PHONE_NUMBER_ID=os.getenv("WA_PHONE_NUMBER_ID", "")
+WEBHOOK_VERIFY_TOKEN=os.getenv("WEBHOOK_VERIFY_TOKEN","")
 
 # Application definition
 

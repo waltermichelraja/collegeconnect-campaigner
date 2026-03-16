@@ -7,4 +7,7 @@ urlpatterns=[
     path("campaign/send/",views.send_campaign),
     path("replies/",views.get_replies),
     path("progress/",views.campaign_progress),
+
+    path("webhook/",views.whatsapp_webhook),
+    path("webhook/verify/",views.whatsapp_webhook_verify),
 ]

@@ -2,6 +2,9 @@ import asyncio
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from django.conf import settings
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 
 from .models import Campaign, Reply
 from .serializers import CampaignSerializer, ReplySerializer
@@ -59,3 +62,31 @@ def campaign_progress(request):
     yes=Reply.objects.filter(campaign_id=campaign_id, response="yes_confirm").count()
     no=Reply.objects.filter(campaign_id=campaign_id,response="no_decline").count()
     return Response({"total_contacts": total, "yes": yes, "no": no})
+
+
+@api_view(["GET"])
+def whatsapp_webhook_verify(request):
+    verify_token=request.GET.get("hub.verify_token")
+    challenge=request.GET.get("hub.challenge")
+    if verify_token==settings.WEBHOOK_VERIFY_TOKEN:
+        return HttpResponse(challenge)
+    return Response({"error": "verification failed"}, status=403)
+
+
+@api_view(["POST"])
+def whatsapp_webhook(request):
+    data=request.data
+    try:
+        entry=data["entry"][0]
+        changes=entry["changes"][0]
+        value=changes["value"]
+        if "messages" not in value:
+            return Response({"status":"event received"})
+        message=value["messages"][0]
+        phone=message["from"]
+        button_id=message["interactive"]["button_reply"]["id"]
+        campaign=Campaign.objects.last()
+        Reply.objects.create(phone_number=phone, campaign=campaign, response=button_id)
+    except Exception as e:
+        print("webhook parse error:", e)
+    return Response({"status": "received"})
