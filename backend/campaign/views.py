@@ -1,4 +1,5 @@
 import asyncio
+import csv
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -13,13 +14,13 @@ from .models import Contact
 from .services.bulk_sender import send_bulk_messages
 from .services.whatsapp_client import build_interactive_message
 
+
 @api_view(["POST"])
 def create_campaign(request):
     serializer=CampaignSerializer(data=request.data)
     if serializer.is_valid():
         campaign=serializer.save()
         return Response({"campaign_id":campaign.id})
-    
     return Response(serializer.errors, status=400)
 
 
@@ -38,7 +39,7 @@ def upload_contacts(request):
 @api_view(["POST"])
 def send_campaign(request):
     campaign_id=request.data.get("campaign_id")
-    campaign=Campaign.objects.get(id=campaign_id)
+    campaign=get_object_or_404(Campaign, id=campaign_id)
     contacts=Contact.objects.filter(campaign=campaign)
     phones=[c.phone_number for c in contacts]
     def payload_builder(phone):
@@ -59,9 +60,10 @@ def get_replies(request):
 def campaign_progress(request):
     campaign_id=request.GET.get("campaign_id")
     total=Contact.objects.filter(campaign_id=campaign_id).count()
-    yes=Reply.objects.filter(campaign_id=campaign_id, response="yes_confirm").count()
-    no=Reply.objects.filter(campaign_id=campaign_id,response="no_decline").count()
-    return Response({"total_contacts": total, "yes": yes, "no": no})
+    sent=Contact.objects.filter(campaign_id=campaign_id, status="sent").count()
+    failed=Contact.objects.filter(campaign_id=campaign_id, status="failed").count()
+    pending=Contact.objects.filter(campaign_id=campaign_id, status="queued").count()
+    return Response({"total": total, "sent": sent, "failed": failed, "pending": pending})
 
 
 @api_view(["GET"])
@@ -86,7 +88,21 @@ def whatsapp_webhook(request):
         phone=message["from"]
         button_id=message["interactive"]["button_reply"]["id"]
         campaign=Campaign.objects.last()
-        Reply.objects.create(phone_number=phone, campaign=campaign, response=button_id)
+        if campaign:
+            Reply.objects.create(phone_number=phone, campaign=campaign, response=button_id)
     except Exception as e:
         print("webhook parse error:", e)
     return Response({"status": "received"})
+
+
+@api_view(["GET"])
+def export_replies_csv(request):
+    campaign_id=request.GET.get("campaign_id")
+    replies=Reply.objects.filter(campaign_id=campaign_id).values_list("phone_number", "response", "timestamp")
+    response=HttpResponse(content_type="text/csv")
+    response["Content-Disposition"]=f'attachment; filename="campaign_{campaign_id}_replies.csv"'
+    writer=csv.writer(response)
+    writer.writerow(["phone_number", "response", "timestamp"])
+    for row in replies:
+        writer.writerow(row)
+    return response

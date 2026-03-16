@@ -10,4 +10,6 @@ urlpatterns=[
 
     path("webhook/",views.whatsapp_webhook),
     path("webhook/verify/",views.whatsapp_webhook_verify),
+    
+    path("export/",views.export_replies_csv),
 ]
