@@ -31,9 +31,11 @@ def upload_contacts(request):
     if not csv_file:
         return Response({"error": "CSV file not provided"}, status=400)
     valid, invalid=load_contacts(csv_file)
+    created=0
     for phone in valid:
-        Contact.objects.create(phone_number=phone, campaign_id=campaign_id)
-    return Response({"valid_contacts": len(valid), "invalid_contacts": invalid})
+        created_flag=Contact.objects.get_or_create(phone_number=phone, campaign_id=campaign_id, defaults={"status": "queued"})
+        if created_flag: created+=1
+    return Response({"new_contacts": created, "duplicates_skipped": len(valid)-created, "invalid_contacts": invalid})
 
 
 @api_view(["POST"])

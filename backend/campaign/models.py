@@ -16,6 +16,8 @@ class Contact(models.Model):
     campaign=models.ForeignKey(Campaign,on_delete=models.CASCADE)
     status=models.CharField(max_length=20,default="queued")
     created_at=models.DateTimeField(auto_now_add=True)
+    class Meta:
+        unique_together=["phone_number", "campaign"]
 
 
 class Reply(models.Model):
