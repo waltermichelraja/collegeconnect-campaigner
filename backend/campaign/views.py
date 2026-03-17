@@ -3,7 +3,6 @@ import logging
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 
@@ -22,7 +21,7 @@ def create_campaign(request):
     if serializer.is_valid():
         campaign=serializer.save()
         return Response({"campaign_id":campaign.id})
-    return Response(serializer.errors, status=400)
+    return Response(serializer.errors,status=400)
 
 
 @api_view(["POST"])
@@ -72,7 +71,10 @@ def build_template_payload(phone,campaign):
         phone="+{}".format(phone)
     message=campaign.message_body
     message+="\n\nReply with:\n1. Yes\n2. No\n3. Maybe"
-    return{"to":phone,"body":message}
+    payload={"to":phone,"body":message}
+    if campaign.image_url:
+        payload["media_url"]=[campaign.image_url]
+    return payload
 
 
 @api_view(["POST"])
@@ -109,6 +111,7 @@ def campaign_progress(request):
     campaign_id=request.GET.get("campaign_id")
     total=Contact.objects.filter(campaign_id=campaign_id).count()
     sent=Contact.objects.filter(campaign_id=campaign_id,status="sent").count()
+    delivered=Contact.objects.filter(campaign_id=campaign_id,status="delivered").count()
     failed=Contact.objects.filter(campaign_id=campaign_id,status="failed").count()
     pending=Contact.objects.filter(
         campaign_id=campaign_id,
@@ -117,6 +120,7 @@ def campaign_progress(request):
     return Response({
         "total":total,
         "sent":sent,
+        "delivered":delivered,
         "failed":failed,
         "pending":pending
     })
@@ -148,6 +152,25 @@ def whatsapp_webhook(request):
         )
     except Exception as e:
         logger.error("webhook error: %s",str(e))
+    return Response({"status":"received"})
+
+
+@api_view(["POST"])
+def twilio_status_webhook(request):
+    try:
+        phone=request.data.get("To","")
+        phone=phone.replace("whatsapp:+","").strip()
+        status=request.data.get("MessageStatus","")
+        if not phone or not status:
+            return Response({"status":"ignored"})
+        if status in ["delivered","read"]:
+            Contact.objects.filter(phone_number=phone)\
+                .update(status="delivered")
+        elif status in ["failed","undelivered"]:
+            Contact.objects.filter(phone_number=phone)\
+                .update(status="failed")
+    except Exception as e:
+        logger.error("status webhook error: %s",str(e))
     return Response({"status":"received"})
 
 

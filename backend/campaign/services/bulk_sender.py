@@ -20,20 +20,29 @@ def mark_campaign_complete(campaign_id):
 
 
 @sync_to_async
-def update_contact_status(phone, campaign_id, status):
+def update_contact_status(phone,campaign_id,status):
     Contact.objects.filter(
         phone_number=phone,
-        campaign_id=campaign_id,
-        status="processing"
+        campaign_id=campaign_id
     ).update(status=status)
 
 
 @sync_to_async
-def send_twilio_message(to_number,body):
+def store_twilio_sid(phone,campaign_id,sid):
+    Contact.objects.filter(
+        phone_number=phone,
+        campaign_id=campaign_id
+    ).update(twilio_sid=sid)
+
+
+@sync_to_async
+def send_twilio_message(to_number,body,media_url=None,status_callback=None):
     return client.messages.create(
         body=body,
         from_=settings.TWILIO_WHATSAPP_NUMBER,
-        to=to_number
+        to=to_number,
+        media_url=media_url if media_url else None,
+        status_callback=status_callback
     )
 
 
@@ -43,7 +52,15 @@ async def send_message(phone,payload,campaign_id):
         try:
             async with sem:
                 to_number="whatsapp:{}".format(payload["to"])
-                await send_twilio_message(to_number,payload["body"])
+
+                msg=await send_twilio_message(
+                    to_number,
+                    payload["body"],
+                    payload.get("media_url"),
+                    settings.TWILIO_STATUS_CALLBACK
+                )
+
+                await store_twilio_sid(phone,campaign_id,msg.sid)
                 await update_contact_status(phone,campaign_id,"sent")
                 return{"phone":phone,"status":"sent"}
         except Exception as e:
