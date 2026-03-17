@@ -1,17 +1,17 @@
 import asyncio
-import aiohttp
 
 from django.conf import settings
 from asgiref.sync import sync_to_async
+from twilio.rest import Client
 
-from campaign.models import Campaign
-from campaign.models import Contact
+from campaign.models import Campaign, Contact
 
-BASE_URL="https://graph.facebook.com/v19.0"
-MAX_CONCURRENT=25
-MAX_RETRIES=3
+MAX_CONCURRENT=20
+MAX_RETRIES=2
 
 sem=asyncio.Semaphore(MAX_CONCURRENT)
+
+client=Client(settings.TWILIO_ACCOUNT_SID,settings.TWILIO_AUTH_TOKEN)
 
 
 @sync_to_async
@@ -28,47 +28,46 @@ def update_contact_status(phone, campaign_id, status):
     ).update(status=status)
 
 
-async def send_message(session, phone, payload, campaign_id):
-    url=f"{BASE_URL}/{settings.WA_PHONE_NUMBER_ID}/messages"
-    headers={
-        "Authorization": f"Bearer {settings.WA_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
+@sync_to_async
+def send_twilio_message(to_number,body):
+    return client.messages.create(
+        body=body,
+        from_=settings.TWILIO_WHATSAPP_NUMBER,
+        to=to_number
+    )
+
+
+async def send_message(phone,payload,campaign_id):
     retry_delay=1
     for attempt in range(MAX_RETRIES):
         try:
             async with sem:
-                async with session.post(url,json=payload,headers=headers) as resp:
-                    result=await resp.json()
-                    if resp.status==200:
-                        await update_contact_status(phone, campaign_id, "sent")
-                        return {"phone": phone, "status": "sent"}
-                    if resp.status==429:
-                        await asyncio.sleep(retry_delay)
-                        retry_delay*=2
-                        continue
-                    await update_contact_status(phone, campaign_id, "failed")
-                    return {"phone": phone, "status": "failed", "error": result}
+                to_number="whatsapp:{}".format(payload["to"])
+                await send_twilio_message(to_number,payload["body"])
+                await update_contact_status(phone,campaign_id,"sent")
+                return{"phone":phone,"status":"sent"}
         except Exception as e:
             if attempt<MAX_RETRIES-1:
                 await asyncio.sleep(retry_delay)
                 retry_delay*=2
                 continue
-            await update_contact_status(phone, campaign_id, "failed")
-            return {"phone": phone, "status": "failed", "error": str(e)}
-    await update_contact_status(phone, campaign_id, "failed")
-    return {"phone": phone, "status": "failed"}
+            await update_contact_status(phone,campaign_id,"failed")
+            return{"phone":phone,"status":"failed","error":str(e)}
+    await update_contact_status(phone,campaign_id,"failed")
+    return{"phone":phone,"status":"failed"}
 
 
-async def send_bulk_messages(phones, payload_builder, campaign_id):
-    async with aiohttp.ClientSession() as session:
-        tasks=[]
-        for phone in phones:
-            payload=payload_builder(phone)
-            task=asyncio.create_task(send_message(session, phone, payload, campaign_id))
-            tasks.append(task)
-        results=await asyncio.gather(*tasks)
-        all_done=len(results)==len(phones) and all(r.get("status") in ["sent","failed"] for r in results)
-        if all_done:
-            await mark_campaign_complete(campaign_id)
-        return results
+async def send_bulk_messages(phones,payload_builder,campaign_id):
+    tasks=[]
+    for phone in phones:
+        payload=payload_builder(phone)
+        task=asyncio.create_task(
+            send_message(phone,payload,campaign_id)
+        )
+        tasks.append(task)
+    results=await asyncio.gather(*tasks)
+    all_done=all(r.get("status") in ["sent","failed"] for r in results)
+    if all_done:
+        await mark_campaign_complete(campaign_id)
+
+    return results

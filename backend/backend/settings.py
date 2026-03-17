@@ -30,11 +30,11 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
-WA_ACCESS_TOKEN=os.getenv("WA_ACCESS_TOKEN", "")
-WA_PHONE_NUMBER_ID=os.getenv("WA_PHONE_NUMBER_ID", "")
-WEBHOOK_VERIFY_TOKEN=os.getenv("WEBHOOK_VERIFY_TOKEN","")
+TWILIO_ACCOUNT_SID=os.getenv("TWILIO_ACCOUNT_SID","")
+TWILIO_AUTH_TOKEN=os.getenv("TWILIO_AUTH_TOKEN","")
+TWILIO_WHATSAPP_NUMBER=os.getenv("TWILIO_WHATSAPP_NUMBER","")
 
 # Application definition
 

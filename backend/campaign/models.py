@@ -32,6 +32,13 @@ class Reply(models.Model):
     campaign=models.ForeignKey(Campaign,on_delete=models.CASCADE)
     response=models.CharField(max_length=20)
     timestamp=models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints=[
+            models.UniqueConstraint(
+                fields=["phone_number","campaign","response"],
+                name="unique_reply_once"
+            )
+        ]
 
 
 class Media(models.Model):
