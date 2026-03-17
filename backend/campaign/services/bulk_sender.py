@@ -24,7 +24,7 @@ def update_contact_status(phone, campaign_id, status):
     Contact.objects.filter(
         phone_number=phone,
         campaign_id=campaign_id,
-        status="queued"
+        status="processing"
     ).update(status=status)
 
 
@@ -68,5 +68,7 @@ async def send_bulk_messages(phones, payload_builder, campaign_id):
             task=asyncio.create_task(send_message(session, phone, payload, campaign_id))
             tasks.append(task)
         results=await asyncio.gather(*tasks)
-        await mark_campaign_complete(campaign_id)
+        all_done=len(results)==len(phones) and all(r.get("status") in ["sent","failed"] for r in results)
+        if all_done:
+            await mark_campaign_complete(campaign_id)
         return results

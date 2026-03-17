@@ -77,8 +77,9 @@ def send_campaign(request):
     campaign=get_object_or_404(Campaign,id=campaign_id)
     campaign.status="sending"
     campaign.save()
-    contacts=Contact.objects.filter(campaign=campaign)
-    phones=[c.phone_number for c in contacts]
+    qs=Contact.objects.filter(campaign=campaign, status="queued")
+    phones=list(qs.values_list("phone_number", flat=True))
+    qs.update(status="processing")
     def payload_builder(phone):
         return build_interactive_message(
             phone,
@@ -108,7 +109,7 @@ def campaign_progress(request):
     total=Contact.objects.filter(campaign_id=campaign_id).count()
     sent=Contact.objects.filter(campaign_id=campaign_id, status="sent").count()
     failed=Contact.objects.filter(campaign_id=campaign_id, status="failed").count()
-    pending=Contact.objects.filter(campaign_id=campaign_id, status="queued").count()
+    pending=Contact.objects.filter(campaign_id=campaign_id, status__in=["queued", "processing"]).count()
     return Response({"total": total, "sent": sent, "failed": failed, "pending": pending})
 
 
