@@ -13,6 +13,7 @@ from .utils.csv_validator import load_contacts
 from .models import Contact
 from .services.bulk_sender import send_bulk_messages
 from .services.whatsapp_client import build_interactive_message
+from .services.background import run_async_task
 
 
 @api_view(["POST"])
@@ -73,13 +74,21 @@ def upload_contacts(request):
 @api_view(["POST"])
 def send_campaign(request):
     campaign_id=request.data.get("campaign_id")
-    campaign=get_object_or_404(Campaign, id=campaign_id)
+    campaign=get_object_or_404(Campaign,id=campaign_id)
     contacts=Contact.objects.filter(campaign=campaign)
     phones=[c.phone_number for c in contacts]
     def payload_builder(phone):
-        return build_interactive_message(phone, campaign.media_id, campaign.message_body)
-    asyncio.get_event_loop().run_until_complete(send_bulk_messages(phones, payload_builder))
-    return Response({"campaign": campaign_id, "contacts": len(phones), "status": "sending"})
+        return build_interactive_message(
+            phone,
+            campaign.media_id,
+            campaign.message_body
+        )
+    run_async_task(send_bulk_messages(phones, payload_builder))
+    return Response({
+        "campaign": campaign_id,
+        "contacts": len(phones),
+        "status": "started"
+    })
 
 
 @api_view(["GET"])
