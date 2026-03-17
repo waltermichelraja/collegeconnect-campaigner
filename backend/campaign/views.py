@@ -85,7 +85,8 @@ def send_campaign(request):
             phone,
             campaign.media_id,
             campaign.message_body,
-            campaign.buttons
+            campaign.buttons,
+            campaign.id
         )
     run_async_task(send_bulk_messages(phones, payload_builder, campaign.id))
     return Response({
@@ -133,10 +134,14 @@ def whatsapp_webhook(request):
             return Response({"status":"event received"})
         message=value["messages"][0]
         phone=message["from"]
-        button_id=message["interactive"]["button_reply"]["id"]
-        campaign=Campaign.objects.last()
-        if campaign:
-            Reply.objects.create(phone_number=phone, campaign=campaign, response=button_id)
+        raw_id=message["interactive"]["button_reply"]["id"]
+        campaign_id,button_id=raw_id.split(":", 1)
+        campaign=get_object_or_404(Campaign,id=campaign_id)
+        Reply.objects.create(
+            phone_number=phone,
+            campaign=campaign,
+            response=button_id
+        )
     except Exception as e:
         print("webhook parse error:", e)
     return Response({"status": "received"})

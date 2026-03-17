@@ -21,7 +21,7 @@ def upload_media(file_path):
     r=requests.post(url,headers=headers,files=files)
     return r.json()["id"]
 
-def build_interactive_message(phone, media_id, message, buttons):
+def build_interactive_message(phone, media_id, message, buttons, campaign_id):
     return{
         "messaging_product":"whatsapp",
         "to":phone,
@@ -40,7 +40,7 @@ def build_interactive_message(phone, media_id, message, buttons):
                     {
                         "type":"reply",
                         "reply":{
-                            "id":btn["id"],
+                            "id":f"{campaign_id}:{btn['id']}",
                             "title":btn["title"]
                         }
                     }
