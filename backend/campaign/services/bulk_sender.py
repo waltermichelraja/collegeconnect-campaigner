@@ -52,24 +52,35 @@ async def send_message(phone,payload,campaign_id):
         try:
             async with sem:
                 to_number="whatsapp:{}".format(payload["to"])
-
                 msg=await send_twilio_message(
                     to_number,
                     payload["body"],
                     payload.get("media_url"),
                     settings.TWILIO_STATUS_CALLBACK
                 )
-
                 await store_twilio_sid(phone,campaign_id,msg.sid)
                 await update_contact_status(phone,campaign_id,"sent")
                 return{"phone":phone,"status":"sent"}
         except Exception as e:
-            if attempt<MAX_RETRIES-1:
+            error_str=str(e).lower()
+            if "unreachable" in error_str or "not a valid" in error_str:
+                error_type="invalid_number"
+            elif "blocked" in error_str or "opted out" in error_str:
+                error_type="blocked_user"
+            elif "rate limit" in error_str or "too many requests" in error_str:
+                error_type="rate_limited"
+            else:
+                error_type="unknown"
+            if attempt<MAX_RETRIES-1 and error_type=="rate_limited":
                 await asyncio.sleep(retry_delay)
                 retry_delay*=2
                 continue
             await update_contact_status(phone,campaign_id,"failed")
-            return{"phone":phone,"status":"failed","error":str(e)}
+            return{
+                "phone":phone,
+                "status":"failed",
+                "error":error_type
+            }
     await update_contact_status(phone,campaign_id,"failed")
     return{"phone":phone,"status":"failed"}
 
