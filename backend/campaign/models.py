@@ -6,6 +6,8 @@ class Campaign(models.Model):
     message_body=models.TextField()
     image_path=models.CharField(max_length=500,null=True,blank=True)
     media_id=models.CharField(max_length=200,null=True,blank=True)
+    buttons=models.JSONField(default=list)
+    status=models.CharField(max_length=20,default="draft")
     created_at=models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

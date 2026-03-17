@@ -75,15 +75,18 @@ def upload_contacts(request):
 def send_campaign(request):
     campaign_id=request.data.get("campaign_id")
     campaign=get_object_or_404(Campaign,id=campaign_id)
+    campaign.status="sending"
+    campaign.save()
     contacts=Contact.objects.filter(campaign=campaign)
     phones=[c.phone_number for c in contacts]
     def payload_builder(phone):
         return build_interactive_message(
             phone,
             campaign.media_id,
-            campaign.message_body
+            campaign.message_body,
+            campaign.buttons
         )
-    run_async_task(send_bulk_messages(phones, payload_builder))
+    run_async_task(send_bulk_messages(phones, payload_builder, campaign.id))
     return Response({
         "campaign": campaign_id,
         "contacts": len(phones),
