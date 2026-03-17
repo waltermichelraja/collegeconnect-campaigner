@@ -17,7 +17,12 @@ class Contact(models.Model):
     status=models.CharField(max_length=20,default="queued")
     created_at=models.DateTimeField(auto_now_add=True)
     class Meta:
-        unique_together=["phone_number", "campaign"]
+        constraints=[
+            models.UniqueConstraint(
+                fields=["phone_number", "campaign"], 
+                name="unique_contact_per_campaign"
+            )
+        ]
 
 
 class Reply(models.Model):
