@@ -3,9 +3,7 @@ import pandas as pd
 
 def validate_phone(number):
     number=str(number).strip()
-    if number.startswith("91") and len(number)==12 and number.isdigit():
-        return True
-    return False
+    return number.startswith("91") and len(number)==12 and number.isdigit()
 
 
 def load_contacts(csv_file):
@@ -21,8 +19,9 @@ def load_contacts(csv_file):
     invalid=[]
     for index,row in df.iterrows():
         phone=str(row["phone_number"]).strip()
+        row_number=index+2
         if validate_phone(phone):
-            valid.append(phone)
+            valid.append({"row": row_number, "phone_number": phone})
         else:
-            invalid.append({"row": index+2, "phone_number": phone})
+            invalid.append({"row": row_number, "phone_number": phone})
     return valid,invalid

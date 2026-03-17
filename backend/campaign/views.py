@@ -29,17 +29,45 @@ def upload_contacts(request):
     campaign_id=request.data.get("campaign_id")
     csv_file=request.FILES.get("file")
     if not csv_file:
-        return Response({"error": "csv file not provided"}, status=400)
-    valid, invalid=load_contacts(csv_file)
-    created=0
-    for phone in valid:
-        obj, created_flag=Contact.objects.get_or_create(
-            phone_number=phone,
-            campaign_id=campaign_id,
-            defaults={"status": "queued"}
-        )
-        if created_flag: created+=1
-    return Response({"new_contacts": created, "duplicates_skipped": len(valid)-created, "invalid_contacts": invalid})
+        return Response({"error": "CSV file not provided"}, status=400)
+    campaign=get_object_or_404(Campaign, id=campaign_id)
+    try:
+        valid,invalid=load_contacts(csv_file)
+    except ValueError as e:
+        return Response({"error": str(e)}, status=400)
+    existing_numbers=set(
+        Contact.objects.filter(campaign=campaign)
+        .values_list("phone_number", flat=True)
+    )
+    new_numbers=[]
+    seen=set()
+    duplicates=[]
+    for item in valid:
+        phone=item["phone_number"]
+        row=item["row"]
+        if phone in existing_numbers or phone in seen:
+            duplicates.append({
+                "row": row,
+                "phone_number": phone
+            })
+        else:
+            new_numbers.append(phone)
+            seen.add(phone)
+    contacts=[
+        Contact(phone_number=phone, campaign=campaign, status="queued")
+        for phone in new_numbers
+    ]
+    created_objs=Contact.objects.bulk_create(contacts, ignore_conflicts=True)
+    created_count=len(created_objs)
+    db_conflicts=len(new_numbers)-created_count
+    return Response({
+        "new_contacts": created_count,
+        "duplicates_skipped": duplicates,
+        "invalid_contacts": invalid,
+        "meta":{
+            "db_conflicts": db_conflicts
+        }
+    })
 
 
 @api_view(["POST"])
