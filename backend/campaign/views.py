@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
 
 from .models import Campaign, Reply, Contact
 from .serializers import CampaignSerializer, ReplySerializer
@@ -70,9 +71,14 @@ def build_template_payload(phone,campaign):
     if not phone.startswith("+"):
         phone="+{}".format(phone)
     message=campaign.message_body
-    message+="\n\nReply with:\n1. Yes\n2. No\n3. Maybe"
+    if campaign.buttons:
+        message+="\n\nReply with:\n"
+        for idx,btn in enumerate(campaign.buttons,start=1):
+            message+=f"{idx}. {btn['title']}\n"
+
     payload={"to":phone,"body":message}
-    if campaign.image_url:
+
+    if getattr(campaign,"image_url",None):
         payload["media_url"]=[campaign.image_url]
     return payload
 
@@ -126,41 +132,44 @@ def campaign_progress(request):
     })
 
 
+@csrf_exempt
 @api_view(["POST"])
 def whatsapp_webhook(request):
     try:
-        phone=request.data.get("From","")
+        phone=request.POST.get("From","")
         phone=phone.replace("whatsapp:+","").strip()
-        text=request.data.get("Body","").strip().lower()
+        text=request.POST.get("Body","").strip().lower()
         if not phone or not text:
             return Response({"status":"ignored"})
-        if text in ["1","yes","yes - i'll attend"]:
-            response="yes_confirm"
-        elif text in ["2","no","no - can't make it"]:
-            response="no_decline"
-        elif text in ["3","maybe"]:
-            response="maybe"
-        else:
-            return Response({"status":"ignored"})
-        contact=Contact.objects.filter(phone_number=phone).order_by("-id").first()
-        if not contact:
-            return Response({"status":"unknown contact"})
-        Reply.objects.get_or_create(
+        campaign=Campaign.objects.order_by("-id").first()
+        if not campaign:
+            return Response({"status":"no campaign"})
+        matched_response=None
+        for idx,btn in enumerate(campaign.buttons,start=1):
+            title=btn["title"].lower()
+            btn_id=btn["id"]
+            if text==str(idx) or title in text:
+                matched_response=btn_id
+                break
+        if not matched_response:
+            matched_response="unknown"
+        Reply.objects.update_or_create(
             phone_number=phone,
-            campaign=contact.campaign,
-            response=response
+            campaign=campaign,
+            defaults={"response":matched_response}
         )
     except Exception as e:
-        logger.error("webhook error: %s",str(e))
+        logger.error(f"WEBHOOK ERROR: {str(e)}")
     return Response({"status":"received"})
 
 
+@csrf_exempt
 @api_view(["POST"])
 def twilio_status_webhook(request):
     try:
-        phone=request.data.get("To","")
+        phone=request.POST.get("To","")
         phone=phone.replace("whatsapp:+","").strip()
-        status=request.data.get("MessageStatus","")
+        status=request.POST.get("MessageStatus","")
         if not phone or not status:
             return Response({"status":"ignored"})
         if status in ["delivered","read"]:
@@ -170,7 +179,7 @@ def twilio_status_webhook(request):
             Contact.objects.filter(phone_number=phone)\
                 .update(status="failed")
     except Exception as e:
-        logger.error("status webhook error: %s",str(e))
+        logger.error(f"WEBHOOK ERROR: {str(e)}")
     return Response({"status":"received"})
 
 
