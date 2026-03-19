@@ -2,16 +2,15 @@ import asyncio
 
 from django.conf import settings
 from asgiref.sync import sync_to_async
-from twilio.rest import Client
 
 from campaign.models import Campaign, Contact
+from .providers.fast2sms_provider import Fast2SMSProvider
+
 
 MAX_CONCURRENT=20
 MAX_RETRIES=2
 
 sem=asyncio.Semaphore(MAX_CONCURRENT)
-
-client=Client(settings.TWILIO_ACCOUNT_SID,settings.TWILIO_AUTH_TOKEN)
 
 
 @sync_to_async
@@ -28,61 +27,40 @@ def update_contact_status(phone,campaign_id,status):
 
 
 @sync_to_async
-def store_twilio_sid(phone,campaign_id,sid):
+def store_message_id(phone,campaign_id,message_id):
     Contact.objects.filter(
         phone_number=phone,
         campaign_id=campaign_id
-    ).update(twilio_sid=sid)
-
-
-@sync_to_async
-def send_twilio_message(to_number,body,media_url=None,status_callback=None):
-    return client.messages.create(
-        body=body,
-        from_=settings.TWILIO_WHATSAPP_NUMBER,
-        to=to_number,
-        media_url=media_url if media_url else None,
-        status_callback=status_callback
-    )
+    ).update(message_id=message_id)
 
 
 async def send_message(phone,payload,campaign_id):
     retry_delay=1
+    provider=Fast2SMSProvider()
     for attempt in range(MAX_RETRIES):
         try:
             async with sem:
-                to_number="whatsapp:{}".format(payload["to"])
-                msg=await send_twilio_message(
-                    to_number,
-                    payload["body"],
-                    payload.get("media_url"),
-                    settings.TWILIO_STATUS_CALLBACK
+                response=await provider.send_template_message(
+                    settings.FAST2SMS_PHONE_NUMBER_ID,
+                    payload["to"],
+                    payload["template_name"],
+                    payload["variables"]
                 )
-                await store_twilio_sid(phone,campaign_id,msg.sid)
+                messages=response.get("messages")
+                if not messages:
+                    raise Exception(f"invalid Fast2SMS response: {response}")
+                message_id=messages[0].get("id")
+                if message_id:
+                    await store_message_id(phone,campaign_id,message_id)
                 await update_contact_status(phone,campaign_id,"sent")
                 return{"phone":phone,"status":"sent"}
         except Exception as e:
-            error_str=str(e).lower()
-            if "unreachable" in error_str or "not a valid" in error_str:
-                error_type="invalid_number"
-            elif "blocked" in error_str or "opted out" in error_str:
-                error_type="blocked_user"
-            elif "rate limit" in error_str or "too many requests" in error_str:
-                error_type="rate_limited"
-            else:
-                error_type="unknown"
-            if attempt<MAX_RETRIES-1 and error_type=="rate_limited":
+            if attempt<MAX_RETRIES-1:
                 await asyncio.sleep(retry_delay)
                 retry_delay*=2
                 continue
             await update_contact_status(phone,campaign_id,"failed")
-            return{
-                "phone":phone,
-                "status":"failed",
-                "error":error_type
-            }
-    await update_contact_status(phone,campaign_id,"failed")
-    return{"phone":phone,"status":"failed"}
+            return{"phone":phone,"status":"failed"}
 
 
 async def send_bulk_messages(phones,payload_builder,campaign_id):
@@ -97,5 +75,4 @@ async def send_bulk_messages(phones,payload_builder,campaign_id):
     all_done=all(r.get("status") in ["sent","failed"] for r in results)
     if all_done:
         await mark_campaign_complete(campaign_id)
-
     return results
