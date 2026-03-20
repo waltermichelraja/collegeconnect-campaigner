@@ -95,6 +95,36 @@ def send_campaign(request):
 
 
 @api_view(["GET"])
+def list_campaigns(request):
+    campaigns=Campaign.objects.all().order_by("-created_at")
+    data=[]
+    for campaign in campaigns:
+        contacts=Contact.objects.filter(campaign=campaign)
+        total=contacts.count()
+        sent=contacts.filter(status="sent").count()
+        delivered=contacts.filter(status="delivered").count()
+        failed=contacts.filter(status="failed").count()
+        pending=contacts.filter(status__in=["queued","processing"]).count()
+        replies=Reply.objects.filter(campaign=campaign)
+        response_counts={}
+        for r in replies:
+            response_counts[r.response]=response_counts.get(r.response,0)+1
+        data.append({
+            "campaign_id":campaign.id,
+            "name":campaign.name,
+            "status":campaign.status,
+            "created_at":campaign.created_at,
+            "total":total,
+            "sent":sent,
+            "delivered":delivered,
+            "failed":failed,
+            "pending":pending,
+            "responses":response_counts
+        })
+    return Response(data)
+
+
+@api_view(["GET"])
 def get_replies(request):
     campaign_id=request.GET.get("campaign_id")
     replies=Reply.objects.filter(campaign_id=campaign_id)
