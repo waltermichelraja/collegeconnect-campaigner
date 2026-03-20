@@ -1,4 +1,3 @@
-import asyncio
 import csv
 import logging
 
@@ -170,19 +169,27 @@ def campaign_progress(request):
 @api_view(["POST"])
 def whatsapp_webhook(request):
     provider=Fast2SMSProvider()
-    events=async_to_sync(provider.parse_webhook)(request)
+    try:
+        events=async_to_sync(provider.parse_webhook)(request)
+    except Exception:
+        return Response({"error":"invalid webhook"},status=400)
     for event in events:
         if event["type"]=="message":
-            message_id=event.get("message_id")
-            contact=Contact.objects.filter(message_id=message_id).first()
-            if not contact or not message_id:
+            parent_id=event.get("context",{}).get("replied_to_message_id")
+            phone=normalize_phone(event.get("phone"))
+            text=(event.get("text") or "").lower()
+            button_id=event.get("button_id")
+            contact=None
+            if parent_id:
+                contact=Contact.objects.filter(message_id=parent_id).first()
+            if not contact and phone:
+                contact=Contact.objects.filter(phone_number=phone)\
+                    .order_by("-id").first()
+            if not contact:
                 continue
             campaign=contact.campaign
             if campaign.status=="stopped":
                 continue
-            phone=contact.phone_number
-            button_id=event.get("button_id")
-            text=(event.get("text") or "").lower()
             matched_response=None
             if button_id:
                 for btn in campaign.buttons:
@@ -197,22 +204,28 @@ def whatsapp_webhook(request):
             if not matched_response:
                 matched_response="unknown"
             Reply.objects.update_or_create(
-                phone_number=phone,
+                phone_number=contact.phone_number,
                 campaign=campaign,
                 defaults={"response":matched_response}
             )
         elif event["type"]=="status":
             message_id=event.get("message_id")
+            phone=normalize_phone(event.get("phone"))
             contact=None
             if message_id:
                 contact=Contact.objects.filter(message_id=message_id).first()
-            if contact and contact.campaign.status=="stopped":
+
+            if not contact and phone:
+                contact=Contact.objects.filter(phone_number=phone)\
+                    .order_by("-id").first()
+            if not contact:
+                continue
+            if contact.campaign.status=="stopped":
                 continue
             if message_id:
                 Contact.objects.filter(message_id=message_id)\
                     .update(status=event["status"])
-            else:
-                phone=normalize_phone(event["phone"])
+            elif phone:
                 Contact.objects.filter(phone_number=phone)\
                     .update(status=event["status"])
     return Response({"status":"received"})

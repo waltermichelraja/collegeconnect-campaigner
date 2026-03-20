@@ -12,9 +12,7 @@ class Fast2SMSProvider:
             "recipient_type":"individual",
             "to":to,
             "type":"text",
-            "text":{
-                "body":body
-            }
+            "text":{"body":body}
         }
         headers={
             "authorization":settings.FAST2SMS_API_KEY,
@@ -22,8 +20,7 @@ class Fast2SMSProvider:
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(url,json=payload,headers=headers) as resp:
-                data=await resp.json()
-                return data
+                return await resp.json()
 
 
     async def send_template_message(self,phone_number_id,to,template_name,variables):
@@ -57,25 +54,34 @@ class Fast2SMSProvider:
 
     async def parse_webhook(self,request):
         data=request.data
-        events=data.get("whatsapp_reports",[])
-        parsed=[]
-        for event in events:
-            if event.get("type")=="incoming_message":
-                text=event.get("body")
-                interactive=event.get("interactive",{})
+        events=[]
+        reports=data.get("whatsapp_reports",[])
+        for e in reports:
+            event_type=e.get("type")
+            if event_type in ["incoming_message","message"]:
+                interactive=e.get("interactive",{})
                 button_reply=interactive.get("button_reply",{})
-                parsed.append({
+
+                events.append({
                     "type":"message",
-                    "phone":event.get("from"),
-                    "text":text,
-                    "button_id":button_reply.get("id"),
-                    "message_id":event.get("message_id")
+                    "phone":e.get("from"),
+                    "text":e.get("body"),
+                    "button_id":(
+                        button_reply.get("id") or
+                        (e.get("button") or {}).get("payload")
+                    ),
+                    "message_id":e.get("message_id"),
+                    "context":e.get("context",{})
                 })
-            elif event.get("type")=="status_update":
-                parsed.append({
+
+            elif event_type in ["status_update","status"]:
+                events.append({
                     "type":"status",
-                    "phone":event.get("recipient_id"),
-                    "status":event.get("status"),
-                    "message_id":event.get("request_id")
+                    "phone":e.get("recipient_id"),
+                    "status":e.get("status"),
+                    "message_id":(
+                        e.get("message_id") or
+                        e.get("request_id")
+                    )
                 })
-        return parsed
+        return events
