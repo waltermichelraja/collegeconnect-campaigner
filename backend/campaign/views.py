@@ -94,6 +94,20 @@ def send_campaign(request):
     })
 
 
+@api_view(["POST"])
+def stop_campaign(request):
+    campaign_id=request.data.get("campaign_id")
+    campaign=get_object_or_404(Campaign,id=campaign_id)
+    if campaign.status in ["completed","stopped"]:
+        return Response({"message":"campaign already finished"})
+    campaign.status="stopped"
+    campaign.save()
+    return Response({
+        "campaign_id":campaign_id,
+        "status":"stopped"
+    })
+
+
 @api_view(["GET"])
 def list_campaigns(request):
     campaigns=Campaign.objects.all().order_by("-created_at")
@@ -163,8 +177,10 @@ def whatsapp_webhook(request):
             contact=Contact.objects.filter(message_id=message_id).first()
             if not contact or not message_id:
                 continue
-            phone=contact.phone_number
             campaign=contact.campaign
+            if campaign.status=="stopped":
+                continue
+            phone=contact.phone_number
             button_id=event.get("button_id")
             text=(event.get("text") or "").lower()
             matched_response=None
@@ -187,6 +203,11 @@ def whatsapp_webhook(request):
             )
         elif event["type"]=="status":
             message_id=event.get("message_id")
+            contact=None
+            if message_id:
+                contact=Contact.objects.filter(message_id=message_id).first()
+            if contact and contact.campaign.status=="stopped":
+                continue
             if message_id:
                 Contact.objects.filter(message_id=message_id)\
                     .update(status=event["status"])

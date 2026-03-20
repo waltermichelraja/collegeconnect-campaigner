@@ -40,6 +40,9 @@ async def send_message(phone,payload,campaign_id):
     for attempt in range(MAX_RETRIES):
         try:
             async with sem:
+                campaign=await Campaign.objects.aget(id=campaign_id)
+                if campaign.status=="stopped":
+                    return {"phone":phone,"status":"stopped"}
                 response=await provider.send_template_message(
                     settings.FAST2SMS_PHONE_NUMBER_ID,
                     payload["to"],
@@ -53,7 +56,7 @@ async def send_message(phone,payload,campaign_id):
                 if message_id:
                     await store_message_id(phone,campaign_id,message_id)
                 await update_contact_status(phone,campaign_id,"sent")
-                return{"phone":phone,"status":"sent"}
+                return {"phone":phone,"status":"sent"}
         except Exception as e:
             if attempt<MAX_RETRIES-1:
                 await asyncio.sleep(retry_delay)

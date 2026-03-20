@@ -5,6 +5,8 @@ urlpatterns=[
     path("campaign/create/",views.create_campaign),
     path("contacts/upload/",views.upload_contacts),
     path("campaign/send/",views.send_campaign),
+    path("campaign/stop/",views.stop_campaign),
+
     path("campaigns/",views.list_campaigns),
     path("replies/",views.get_replies),
     path("progress/",views.campaign_progress),
