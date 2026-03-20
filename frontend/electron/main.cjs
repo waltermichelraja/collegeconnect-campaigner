@@ -1,19 +1,27 @@
-const {app,BrowserWindow}=require("electron")
+const{app,BrowserWindow,Menu}=require("electron")
 const path=require("path")
 
+let win
+
 function createWindow(){
-    const win=new BrowserWindow({
+    win=new BrowserWindow({
         width:1200,
         height:800,
+        backgroundColor:"#020617",
+        autoHideMenuBar:true,
+        title:"WACampaigner",
         webPreferences:{
-            contextIsolation:true
+            contextIsolation:true,
+            nodeIntegration:false,
+            preload:path.join(__dirname,"preload.js")
         }
     })
 
-    win.loadURL("http://localhost:5173")
+    win.loadFile(path.join(__dirname,"../dist/index.html"))
 }
 
 app.whenReady().then(()=>{
+    Menu.setApplicationMenu(null)
     createWindow()
 
     app.on("activate",()=>{
