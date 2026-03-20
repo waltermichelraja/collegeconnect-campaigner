@@ -3,11 +3,19 @@ import api from "../api/client"
 
 export default function CampaignDashboard({onSelect,onCreate}){
     const [campaigns,setCampaigns]=useState([])
+    const [filtered,setFiltered]=useState([])
     const [loading,setLoading]=useState(true)
+
+    const [search,setSearch]=useState("")
+    const [filter,setFilter]=useState("all")
 
     useEffect(()=>{
         fetchCampaigns()
     },[])
+
+    useEffect(()=>{
+        applyFilters()
+    },[campaigns,search,filter])
 
     const fetchCampaigns=async()=>{
         try{
@@ -20,34 +28,70 @@ export default function CampaignDashboard({onSelect,onCreate}){
         }
     }
 
+    const applyFilters=()=>{
+        let data=[...campaigns]
+
+        if(filter!=="all"){
+            data=data.filter(c=>c.status===filter)
+        }
+
+        if(search){
+            data=data.filter(c=>
+                c.name.toLowerCase().includes(search.toLowerCase())
+            )
+        }
+
+        setFiltered(data)
+    }
+
     return (
         <div>
+
+            {/* HEADER */}
             <div style={styles.header}>
                 <h2>Campaigns</h2>
-                <button style={styles.primary} onClick={onCreate}>
-                    + New Campaign
-                </button>
+
+                <div style={styles.actions}>
+                    <input
+                        placeholder="Search campaigns..."
+                        value={search}
+                        onChange={e=>setSearch(e.target.value)}
+                        style={styles.search}
+                    />
+
+                    <select
+                        value={filter}
+                        onChange={e=>setFilter(e.target.value)}
+                        style={styles.select}
+                    >
+                        <option value="all">All</option>
+                        <option value="draft">Draft</option>
+                        <option value="sending">Sending</option>
+                        <option value="completed">Completed</option>
+                    </select>
+
+                    <button style={styles.primary} onClick={onCreate}>
+                        + New Campaign
+                    </button>
+                </div>
             </div>
 
-            {/* Loading */}
-            {loading && (
-                <p style={{opacity:0.6}}>Loading campaigns...</p>
-            )}
+            {/* STATES */}
+            {loading && <p style={{opacity:0.6}}>Loading campaigns...</p>}
 
-            {/* Empty */}
-            {!loading && campaigns.length===0 && (
+            {!loading && filtered.length===0 && (
                 <div style={styles.empty}>
-                    <h3>No campaigns yet</h3>
+                    <h3>No campaigns found</h3>
                     <p style={{opacity:0.6}}>
-                        Create your first campaign to get started
+                        Try adjusting filters or create a new campaign
                     </p>
                 </div>
             )}
 
-            {/* Grid */}
-            {!loading && campaigns.length>0 && (
+            {/* GRID */}
+            {!loading && filtered.length>0 && (
                 <div style={styles.grid}>
-                    {campaigns.map(c=>(
+                    {filtered.map(c=>(
                         <div
                             key={c.campaign_id}
                             style={styles.card}
@@ -79,17 +123,59 @@ const styles={
     header:{
         display:"flex",
         justifyContent:"space-between",
+        alignItems:"center",
         marginBottom:"20px"
     },
+
+    actions:{
+        display:"flex",
+        gap:"10px",
+        alignItems:"center"
+    },
+
+    search:{
+        height:"38px",
+        padding:"0 12px",
+        borderRadius:"8px",
+        border:"1px solid #334155",
+        background:"#020617",
+        color:"white",
+        outline:"none"
+    },
+
+    select:{
+        height:"38px",
+        padding:"0 10px",
+        borderRadius:"8px",
+        background:"#020617",
+        color:"white",
+        border:"1px solid #334155",
+        outline:"none"
+    },
+
+    primary:{
+        height:"38px",
+        background:"#3b82f6",
+        color:"white",
+        padding:"0 16px",
+        borderRadius:"8px",
+        display:"flex",
+        alignItems:"center",
+        justifyContent:"center",
+        fontWeight:"500"
+    },
+
     empty:{
         marginTop:"60px",
         textAlign:"center"
     },
+
     grid:{
         display:"grid",
-        gridTemplateColumns:"repeat(3,1fr)",
+        gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",
         gap:"20px"
     },
+
     card:{
         background:"#1e293b",
         padding:"20px",
@@ -98,12 +184,7 @@ const styles={
         transition:"all 0.2s ease",
         border:"1px solid #1e293b"
     },
-    primary:{
-        background:"#3b82f6",
-        color:"white",
-        padding:"10px 16px",
-        borderRadius:"8px"
-    },
+
     stats:{
         marginTop:"12px",
         display:"flex",
@@ -112,11 +193,12 @@ const styles={
         fontSize:"12px",
         opacity:0.7
     },
+
     status:(status)=>({
         marginTop:"10px",
         fontWeight:"600",
         color:
-            status==="completed"?"#10b981":
+            status==="completed"?"#22c55e":
             status==="sending"?"#f59e0b":
             "#94a3b8"
     })
