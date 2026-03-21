@@ -64,10 +64,12 @@ export default function CampaignDashboard({onSelect,onCreate}){
                         onChange={e=>setFilter(e.target.value)}
                         style={styles.select}
                     >
-                        <option value="all">All</option>
-                        <option value="draft">Draft</option>
-                        <option value="sending">Sending</option>
-                        <option value="completed">Completed</option>
+                        <option value="all">all</option>
+                        <option value="draft">draft</option>
+                        <option value="sending">sending</option>
+                        <option value="completed">completed</option>
+                        <option value="stopped">stopped</option>
+                        
                     </select>
 
                     <button style={styles.primary} onClick={onCreate}>

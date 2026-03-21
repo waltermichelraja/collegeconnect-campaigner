@@ -11,6 +11,8 @@ export default function CampaignAnalytics({campaign,onBack}){
 
     const [replies,setReplies]=useState([])
     const [loading,setLoading]=useState(true)
+    const [stopped,setStopped]=useState(campaign.status==="stopped"||campaign.status==="completed")
+    const [stopping,setStopping]=useState(false)
 
     useEffect(()=>{
         fetchData()
@@ -35,20 +37,16 @@ export default function CampaignAnalytics({campaign,onBack}){
         }
     }
 
-    // NORMALIZE LABEL
-    const normalize=(val)=> (val||"unknown").toString().toLowerCase().trim()
+    const normalize=(val)=>(val||"unknown").toString().toLowerCase().trim()
 
-    // DYNAMIC COLOR GENERATOR (HASH BASED)
     const getColor=(label)=>{
         let hash=0
         for(let i=0;i<label.length;i++){
             hash=label.charCodeAt(i)+((hash<<5)-hash)
         }
-        const color=`hsl(${hash%360},70%,55%)`
-        return color
+        return `hsl(${hash%360},70%,55%)`
     }
 
-    // BREAKDOWN (GENERIC)
     const getResponseStats=()=>{
         const counts={}
 
@@ -78,8 +76,31 @@ export default function CampaignAnalytics({campaign,onBack}){
     const totalResponses=replies.length
 
     const engagement=stats.total
-        ?Math.min(100,Math.round((uniqueResponders/stats.total)*100))
-        :0
+        ?Math.min(100,Math.round((uniqueResponders/stats.total)*100)):0
+
+    const handleStop=async()=>{
+        if(stopped)return
+
+        const confirmStop=window.confirm("are you sure you want to stop this campaign?")
+        if(!confirmStop)return
+
+        setStopping(true)
+
+        try{
+            await api.post("/campaign/stop/",{
+                campaign_id:campaign.campaign_id
+            })
+
+            setStopped(true)
+            campaign.status="stopped"
+
+        }catch(err){
+            console.error(err)
+            alert("failed to stop campaign")
+        }finally{
+            setStopping(false)
+        }
+    }
 
     const handleExport=async()=>{
         try{
@@ -111,17 +132,29 @@ export default function CampaignAnalytics({campaign,onBack}){
                     ← Back
                 </button>
 
-                <button style={styles.export} onClick={handleExport}>
-                    ⬇ Export CSV
-                </button>
+                <div style={styles.actions}>
+                    <button
+                        style={{
+                            ...styles.stop,
+                            ...(stopped?styles.stopDisabled:{})
+                        }}
+                        onClick={handleStop}
+                        disabled={stopped||stopping}
+                    >
+                        {stopped?"Campaign Ended":(stopping?"Stopping...":"End Campaign")}
+                    </button>
+
+                    <button style={styles.export} onClick={handleExport}>
+                        ⬇ Export CSV
+                    </button>
+                </div>
             </div>
 
             <h2>{campaign.name}</h2>
             <p style={{opacity:0.6}}>
-                {loading?"Loading...":"Live campaign status"}
+                {loading?"Loading...":(stopped?"Campaign stopped":"Live campaign status")}
             </p>
 
-            {/* MAIN STATS */}
             <div style={styles.grid}>
                 <Stat label="Total" value={stats.total||0}/>
                 <Stat label="Sent" value={stats.sent||0}/>
@@ -129,14 +162,12 @@ export default function CampaignAnalytics({campaign,onBack}){
                 <Stat label="Failed" value={stats.failed||0}/>
             </div>
 
-            {/* INSIGHTS */}
             <div style={styles.insightGrid}>
                 <Insight label="Top Response" value={topResponse}/>
                 <Insight label="Engagement" value={`${engagement}%`}/>
                 <Insight label="Total Replies" value={totalResponses}/>
             </div>
 
-            {/* BREAKDOWN */}
             <div style={styles.card}>
                 <h3>Response Breakdown</h3>
 
@@ -145,9 +176,7 @@ export default function CampaignAnalytics({campaign,onBack}){
                 ):(
                     responseStats.map((r,i)=>(
                         <div key={i} style={styles.breakItem}>
-                            <span style={styles.label}>
-                                {r.label}
-                            </span>
+                            <span style={styles.label}>{r.label}</span>
 
                             <div style={styles.barContainer}>
                                 <div
@@ -167,7 +196,6 @@ export default function CampaignAnalytics({campaign,onBack}){
                 )}
             </div>
 
-            {/* RESPONSES */}
             <div style={styles.card}>
                 <h3>Responses</h3>
 
@@ -189,10 +217,6 @@ export default function CampaignAnalytics({campaign,onBack}){
                         </div>
                     ))
                 )}
-
-                <p style={{opacity:0.4,marginTop:"10px"}}>
-                    Auto-refreshing every 3 seconds...
-                </p>
             </div>
         </div>
     )
@@ -222,24 +246,31 @@ const styles={
     header:{
         display:"flex",
         justifyContent:"space-between",
+        alignItems:"center",
         marginBottom:"20px"
     },
 
-    back:{
-        background:"#334155",
-        color:"white",
-        padding:"8px 12px",
-        borderRadius:"6px",
-        cursor:"pointer"
+    actions:{
+        display:"flex",
+        gap:"10px"
     },
 
-    export:{
-        background:"#7c3aed",
+    back:{background:"#334155",color:"white",padding:"8px 12px",borderRadius:"6px"},
+
+    stop:{
+        background:"#ef4444",
         color:"white",
         padding:"8px 14px",
         borderRadius:"6px",
         cursor:"pointer"
     },
+
+    stopDisabled:{
+        background:"#475569",
+        cursor:"not-allowed"
+    },
+
+    export:{background:"#7c3aed",color:"white",padding:"8px 14px",borderRadius:"6px"},
 
     grid:{
         display:"grid",
@@ -255,55 +286,18 @@ const styles={
         marginTop:"20px"
     },
 
-    stat:{
-        background:"#1e293b",
-        padding:"20px",
-        borderRadius:"12px",
-        textAlign:"center"
-    },
+    stat:{background:"#1e293b",padding:"20px",borderRadius:"12px",textAlign:"center"},
+    insight:{background:"#020617",padding:"15px",borderRadius:"10px"},
 
-    insight:{
-        background:"#020617",
-        padding:"15px",
-        borderRadius:"10px"
-    },
+    card:{marginTop:"30px",background:"#1e293b",padding:"20px",borderRadius:"12px"},
 
-    card:{
-        marginTop:"30px",
-        background:"#1e293b",
-        padding:"20px",
-        borderRadius:"12px"
-    },
+    breakItem:{display:"flex",alignItems:"center",gap:"10px",marginTop:"10px"},
+    label:{width:"120px",textTransform:"capitalize"},
 
-    breakItem:{
-        display:"flex",
-        alignItems:"center",
-        gap:"10px",
-        marginTop:"10px"
-    },
+    barContainer:{flex:1,height:"8px",background:"#020617",borderRadius:"5px"},
+    bar:{height:"100%",borderRadius:"5px"},
 
-    label:{
-        width:"120px",
-        textTransform:"capitalize"
-    },
-
-    barContainer:{
-        flex:1,
-        height:"8px",
-        background:"#020617",
-        borderRadius:"5px"
-    },
-
-    bar:{
-        height:"100%",
-        borderRadius:"5px"
-    },
-
-    percent:{
-        width:"90px",
-        textAlign:"right",
-        fontSize:"12px"
-    },
+    percent:{width:"90px",textAlign:"right",fontSize:"12px"},
 
     replyItem:{
         display:"flex",
