@@ -39,12 +39,17 @@ export default function CampaignAnalytics({campaign,onBack}){
 
     const normalize=(val)=>(val||"unknown").toString().toLowerCase().trim()
 
+    const colors=[
+        "#ef4444","#22c55e","#3b82f6","#eab308",
+        "#a855f7","#06b6d4","#f97316","#84cc16"
+    ]
     const getColor=(label)=>{
         let hash=0
         for(let i=0;i<label.length;i++){
-            hash=label.charCodeAt(i)+((hash<<5)-hash)
+            hash=(hash<<5)-hash+label.charCodeAt(i)
+            hash|=0
         }
-        return `hsl(${hash%360},70%,55%)`
+        return colors[Math.abs(hash)%colors.length]
     }
 
     const getResponseStats=()=>{
