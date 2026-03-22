@@ -11,10 +11,9 @@ SECRET_KEY=os.getenv("DJANGO_SECRET_KEY")
 
 DEBUG=os.getenv("DEBUG","False")=="True"
 
-ALLOWED_HOSTS=["collegeconnect-campaigner-production.up.railway.app", "*"]
+ALLOWED_HOSTS=["collegeconnect-wa-campaigner-production.up.railway.app", "*"]
 
 CORS_ALLOW_ALL_ORIGINS=True
-CORS_ALLOWED_ORIGINS=["*"]
 CORS_ALLOW_CREDENTIALS=True
 CORS_ALLOW_HEADERS=["content-type","authorization"]
 
@@ -23,6 +22,8 @@ TWILIO_AUTH_TOKEN=os.getenv("TWILIO_AUTH_TOKEN","")
 TWILIO_WHATSAPP_NUMBER=os.getenv("TWILIO_WHATSAPP_NUMBER","")
 TWILIO_STATUS_CALLBACK=os.getenv("TWILIO_STATUS_CALLBACK","")
 
+FAST2SMS_API_KEY=os.getenv("FAST2SMS_API_KEY","")
+FAST2SMS_PHONE_NUMBER_ID=os.getenv("FAST2SMS_PHONE_NUMBER_ID","")
 
 INSTALLED_APPS=[
     'django.contrib.admin',

@@ -6,6 +6,7 @@ class CampaignSerializer(serializers.ModelSerializer):
     class Meta:
         model=Campaign
         fields="__all__"
+
     def validate_buttons(self,value):
         if not value:
             raise serializers.ValidationError("at least one button is required")
@@ -17,6 +18,11 @@ class CampaignSerializer(serializers.ModelSerializer):
             if len(btn["title"])>20:
                 raise serializers.ValidationError("button title too long [max 20 chars]")
         return value
+
+    def validate(self,data):
+        if not data.get("template_name"):
+            raise serializers.ValidationError("template_name is required for WhatsApp templates")
+        return data
 
 
 class ContactSerializer(serializers.ModelSerializer):
