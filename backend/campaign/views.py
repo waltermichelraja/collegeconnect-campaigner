@@ -2,6 +2,7 @@ import csv
 import logging
 
 from asgiref.sync import async_to_sync
+from django.core.paginator import Paginator,EmptyPage
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -140,9 +141,57 @@ def list_campaigns(request):
 @api_view(["GET"])
 def get_replies(request):
     campaign_id=request.GET.get("campaign_id")
-    replies=Reply.objects.filter(campaign_id=campaign_id)
-    serializer=ReplySerializer(replies,many=True)
-    return Response(serializer.data)
+    page=int(request.GET.get("page",1))
+    page_size=int(request.GET.get("page_size",10))
+    response_filter=request.GET.get("response")
+    phone_filter=request.GET.get("phone_number")
+    if not campaign_id:
+        return Response({"error":"campaign_id is required"},status=400)
+    qs=Reply.objects.filter(campaign_id=campaign_id).order_by("-timestamp")
+    if response_filter:
+        qs=qs.filter(response=response_filter)
+    if phone_filter:
+        normalized=normalize_phone(phone_filter)
+        qs_exact=qs.filter(phone_number=normalized)
+        if qs_exact.exists():
+            qs=qs_exact
+        else:
+            last_digits=normalized[-10:]
+            qs=qs.filter(phone_number__endswith=last_digits)
+    if not qs.exists():
+        return Response({
+            "results":[],
+            "meta":{
+                "total":0,
+                "page":page,
+                "page_size":page_size,
+                "total_pages":0,
+                "message":"no replies found for given filters"
+            }
+        })
+    paginator=Paginator(qs,page_size)
+    try:
+        page_obj=paginator.page(page)
+    except EmptyPage:
+        return Response({
+            "results":[],
+            "meta":{
+                "total":paginator.count,
+                "page":page,
+                "page_size":page_size,
+                "total_pages":paginator.num_pages
+            }
+        })
+    serializer=ReplySerializer(page_obj.object_list,many=True)
+    return Response({
+        "results":serializer.data,
+        "meta":{
+            "total":paginator.count,
+            "page":page,
+            "page_size":page_size,
+            "total_pages":paginator.num_pages
+        }
+    })
 
 
 @api_view(["GET"])
