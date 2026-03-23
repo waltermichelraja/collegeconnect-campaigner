@@ -1,2 +1,2 @@
-# collegeconnect-campaigner
-a python-based bulk WhatsApp campaign platform built on the official Meta WhatsApp Cloud API
+# wa-campaigner
+WACampaigner is a streamlined **"WhatsApp campaign management platform"**  designed to help organizations communicate efficiently with large groups of users. It enables the creation, execution, and real-time monitoring of messaging campaigns through an intuitive interface, providing clear insights into delivery performance and user responses. Built with a focus on simplicity and control, the platform allows administrators to manage campaigns end-to-end—from audience upload to response tracking—while offering actionable analytics that support better engagement and decision-making.
