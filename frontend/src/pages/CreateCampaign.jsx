@@ -11,12 +11,12 @@ export default function CreateCampaign({onCreated,onBack}){
 
     const handleSubmit=async()=>{
         if(!file){
-            alert("Please upload CSV first")
+            alert("please upload CSV first")
             return
         }
 
         if(!name || !template){
-            alert("Fill all required fields")
+            alert("fill all required fields")
             return
         }
 
@@ -67,12 +67,12 @@ export default function CreateCampaign({onCreated,onBack}){
     return (
         <div style={styles.container}>
 
-            {/* ✅ BACK BUTTON (same as analytics) */}
+            {/* BACK BUTTON (same as analytics) */}
             <button style={styles.back} onClick={onBack}>
                 ← Back
             </button>
 
-            {/* ✅ TITLE BELOW */}
+            {/* TITLE BELOW */}
             <h2>Create Campaign</h2>
 
             {/* Upload */}

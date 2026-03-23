@@ -26,35 +26,36 @@ export default function CampaignAnalytics({campaign,onBack}){
     const [filterType,setFilterType]=useState("phone")
 
     useEffect(()=>{
-        fetchData({isSearch:!!search})
-    },[meta.page,search])
+        fetchData()
+    },[meta.page])
 
     useEffect(()=>{
-        if(search)return
-
-        const interval=setInterval(fetchData,3000)
+        if(search||stopped)return
+        const interval=setInterval(()=>{
+            fetchData({isPolling:true})
+        },5000)
         return ()=>clearInterval(interval)
-    },[search])
+    },[search,stopped])
 
-    const fetchData=async({isSearch=false}={})=>{
+    const fetchData=async({isSearch=false,isPolling=false}={})=>{
         if(isSearch)setSearching(true)
         try{
-            const params={
-                campaign_id:campaign.campaign_id,
-                page:meta.page,
-                page_size:meta.page_size
-            }
-            if(search){
-                if(filterType==="phone") params.phone_number=search
-                if(filterType==="response") params.response=search
-            }
-            const [progressRes,repliesRes]=await Promise.all([
-                api.get(`/progress/?campaign_id=${campaign.campaign_id}`),
-                api.get(`/replies/`,{params})
-            ])
+            const progressRes=await api.get(`/progress/?campaign_id=${campaign.campaign_id}`)
             setStats(progressRes.data||{})
-            setReplies(repliesRes.data.results||[])
-            setMeta(repliesRes.data.meta||{})
+            if(!isPolling){
+                const params={
+                    campaign_id:campaign.campaign_id,
+                    page:meta.page,
+                    page_size:meta.page_size
+                }
+                if(search){
+                    if(filterType==="phone") params.phone_number=search
+                    if(filterType==="response") params.response=search
+                }
+                const repliesRes=await api.get(`/replies/`,{params})
+                setReplies(repliesRes.data.results||[])
+                setMeta(repliesRes.data.meta||{})
+            }
         }catch(err){
             console.error(err)
         }finally{
@@ -64,7 +65,9 @@ export default function CampaignAnalytics({campaign,onBack}){
     }
 
     const handleSearch=()=>{
+        setSearching(true)
         setMeta(prev=>({...prev,page:1}))
+        fetchData({isSearch:true})
     }
 
     const normalize=(val)=>(val||"unknown").toString().toLowerCase().trim()
@@ -140,7 +143,7 @@ export default function CampaignAnalytics({campaign,onBack}){
             link.click()
             link.remove()
         }catch{
-            alert("Export failed")
+            alert("export failed")
         }
     }
 
@@ -205,8 +208,8 @@ export default function CampaignAnalytics({campaign,onBack}){
                         value={search}
                         onChange={e=>setSearch(e.target.value)}
                         onKeyDown={e=>{
-                            if(e.key==="Enter"){    
-                                setMeta(prev=>({...prev,page:1}))
+                            if(e.key==="Enter"){
+                                handleSearch()
                             }
                         }}
                     />
