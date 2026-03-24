@@ -22,7 +22,7 @@ export default function CampaignDashboard({onSelect,onCreate}){
             const res=await api.get("/campaigns/")
             setCampaigns(res.data)
         }catch(err){
-            console.error("Failed to fetch campaigns:",err)
+            console.error("failed to fetch campaigns:",err)
         }finally{
             setLoading(false)
         }
@@ -53,7 +53,7 @@ export default function CampaignDashboard({onSelect,onCreate}){
 
                 <div style={styles.actions}>
                     <input
-                        placeholder="Search campaigns..."
+                        placeholder="search campaigns..."
                         value={search}
                         onChange={e=>setSearch(e.target.value)}
                         style={styles.search}
@@ -79,7 +79,7 @@ export default function CampaignDashboard({onSelect,onCreate}){
             </div>
 
             {/* STATES */}
-            {loading && <p style={{opacity:0.6}}>Loading campaigns...</p>}
+            {loading && <p style={{opacity:0.6}}>loading campaigns...</p>}
 
             {!loading && filtered.length===0 && (
                 <div style={styles.empty}>

@@ -10,31 +10,70 @@ export default function CampaignAnalytics({campaign,onBack}){
     })
 
     const [replies,setReplies]=useState([])
+    const [meta,setMeta]=useState({
+        page:1,
+        page_size:10,
+        total:0,
+        total_pages:0
+    })
+
     const [loading,setLoading]=useState(true)
     const [stopped,setStopped]=useState(campaign.status==="stopped"||campaign.status==="completed")
     const [stopping,setStopping]=useState(false)
 
+    const [search,setSearch]=useState("")
+    const [searching,setSearching]=useState(false)
+    const [filterType,setFilterType]=useState("phone")
+
     useEffect(()=>{
         fetchData()
-        const interval=setInterval(fetchData,3000)
+    },[meta.page])
+
+    useEffect(()=>{
+        if(search||stopped)return
+        const interval=setInterval(()=>{
+            fetchData({isPolling:true})
+        },5000)
         return ()=>clearInterval(interval)
-    },[])
+    },[search,stopped])
 
-    const fetchData=async()=>{
+    const fetchData=async({isSearch=false,isPolling=false}={})=>{
+        if(isSearch)setSearching(true)
         try{
-            const [progressRes,repliesRes]=await Promise.all([
-                api.get(`/progress/?campaign_id=${campaign.campaign_id}`),
-                api.get(`/replies/?campaign_id=${campaign.campaign_id}`)
-            ])
-
+            const progressRes=await api.get(`/progress/?campaign_id=${campaign.campaign_id}`)
             setStats(progressRes.data||{})
-            setReplies(repliesRes.data||[])
-
+            if(!isPolling){
+                const params={
+                    campaign_id:campaign.campaign_id,
+                    page:meta.page,
+                    page_size:meta.page_size
+                }
+                if(search){
+                    if(filterType==="phone") params.phone_number=search
+                    if(filterType==="response") params.response=search
+                }
+                const repliesRes=await api.get(`/replies/`,{params})
+                setReplies(repliesRes.data.results||[])
+                setMeta(repliesRes.data.meta||{})
+            }
         }catch(err){
             console.error(err)
         }finally{
+            if(isSearch)setSearching(false)
             setLoading(false)
         }
+    }
+
+    const formatTime=(ts)=>{
+        if(!ts)return "-"
+        const d=new Date(ts)
+        return d.toLocaleString()
+    }
+
+    const handleSearch=()=>{
+        setSearching(true)
+        setMeta(prev=>({...prev,page:1}))
+        fetchData({isSearch:true})
     }
 
     const normalize=(val)=>(val||"unknown").toString().toLowerCase().trim()
@@ -74,20 +113,13 @@ export default function CampaignAnalytics({campaign,onBack}){
     const responseStats=getResponseStats()
     const topResponse=responseStats[0]?.label||"-"
 
-    const uniqueResponders=new Set(
-        replies.map(r=>r.phone_number)
-    ).size
-
-    const totalResponses=replies.length
-
+    const uniqueResponders=new Set(replies.map(r=>r.phone_number)).size
     const engagement=stats.total
         ?Math.min(100,Math.round((uniqueResponders/stats.total)*100)):0
 
     const handleStop=async()=>{
         if(stopped)return
-
-        const confirmStop=window.confirm("are you sure you want to stop this campaign?")
-        if(!confirmStop)return
+        if(!window.confirm("are you sure you want to stop this campaign?"))return
 
         setStopping(true)
 
@@ -95,12 +127,9 @@ export default function CampaignAnalytics({campaign,onBack}){
             await api.post("/campaign/stop/",{
                 campaign_id:campaign.campaign_id
             })
-
             setStopped(true)
             campaign.status="stopped"
-
-        }catch(err){
-            console.error(err)
+        }catch{
             alert("failed to stop campaign")
         }finally{
             setStopping(false)
@@ -109,11 +138,7 @@ export default function CampaignAnalytics({campaign,onBack}){
 
     const handleExport=async()=>{
         try{
-            const res=await api.get(
-                `/export/?campaign_id=${campaign.campaign_id}`,
-                {responseType:"blob"}
-            )
-
+            const res=await api.get(`/export/?campaign_id=${campaign.campaign_id}`,{responseType:"blob"})
             const blob=new Blob([res.data],{type:"text/csv"})
             const url=window.URL.createObjectURL(blob)
 
@@ -123,9 +148,8 @@ export default function CampaignAnalytics({campaign,onBack}){
             document.body.appendChild(link)
             link.click()
             link.remove()
-
-        }catch(err){
-            alert("Export failed")
+        }catch{
+            alert("export failed")
         }
     }
 
@@ -133,15 +157,14 @@ export default function CampaignAnalytics({campaign,onBack}){
         <div style={styles.container}>
 
             <div style={styles.header}>
-                <button style={styles.back} onClick={onBack}>
-                    ← Back
-                </button>
+                <button style={styles.back} onClick={onBack}>← Back</button>
 
                 <div style={styles.actions}>
                     <button
                         style={{
                             ...styles.stop,
-                            ...(stopped?styles.stopDisabled:{})
+                            ...(stopped?styles.stopDisabled:{}),
+                            cursor:stopped?"not-allowed":"pointer"
                         }}
                         onClick={handleStop}
                         disabled={stopped||stopping}
@@ -155,11 +178,6 @@ export default function CampaignAnalytics({campaign,onBack}){
                 </div>
             </div>
 
-            <h2>{campaign.name}</h2>
-            <p style={{opacity:0.6}}>
-                {loading?"Loading...":(stopped?"Campaign stopped":"Live campaign status")}
-            </p>
-
             <div style={styles.grid}>
                 <Stat label="Total" value={stats.total||0}/>
                 <Stat label="Sent" value={stats.sent||0}/>
@@ -170,126 +188,101 @@ export default function CampaignAnalytics({campaign,onBack}){
             <div style={styles.insightGrid}>
                 <Insight label="Top Response" value={topResponse}/>
                 <Insight label="Engagement" value={`${engagement}%`}/>
-                <Insight label="Total Replies" value={totalResponses}/>
+                <Insight label="Total Replies" value={meta.total}/>
             </div>
 
             <div style={styles.card}>
                 <h3>Response Breakdown</h3>
 
-                {responseStats.length===0?(
-                    <p style={{opacity:0.6}}>No responses yet</p>
-                ):(
-                    responseStats.map((r,i)=>(
-                        <div key={i} style={styles.breakItem}>
-                            <span style={styles.label}>{r.label}</span>
+                {responseStats.map((r,i)=>(
+                    <div key={i} style={styles.breakItem}>
+                        <span style={styles.label}>{r.label}</span>
 
-                            <div style={styles.barContainer}>
-                                <div
-                                    style={{
-                                        ...styles.bar,
-                                        width:`${r.percent}%`,
-                                        background:getColor(r.label)
-                                    }}
-                                />
-                            </div>
-
-                            <span style={styles.percent}>
-                                {r.percent}% ({r.count})
-                            </span>
+                        <div style={styles.barContainer}>
+                            <div style={{...styles.bar,width:`${r.percent}%`,background:getColor(r.label)}}/>
                         </div>
-                    ))
-                )}
+
+                        <span style={styles.percent}>{r.percent}% ({r.count})</span>
+                    </div>
+                ))}
             </div>
 
             <div style={styles.card}>
+                <div style={styles.filterRow}>
+                    <input
+                        placeholder="search..."
+                        value={search}
+                        onChange={e=>setSearch(e.target.value)}
+                        onKeyDown={e=>{
+                            if(e.key==="Enter"){
+                                handleSearch()
+                            }
+                        }}
+                    />
+
+                    <select
+                        style={styles.select}
+                        value={filterType}
+                        onChange={e=>setFilterType(e.target.value)}
+                    >
+                        <option value="phone">phone_number</option>
+                        <option value="response">response</option>
+                    </select>
+
+                    <button style={styles.searchBtn} onClick={handleSearch}>
+                        {searching?"searching...":"search"}
+                    </button>
+                </div>
                 <h3>Responses</h3>
-
-                {replies.length===0?(
-                    <p style={{opacity:0.6}}>No responses yet</p>
-                ):(
-                    replies.map((r,i)=>(
-                        <div key={i} style={styles.replyItem}>
+                {replies.map((r,i)=>(
+                    <div key={i} style={styles.replyItem}>
+                        <div style={styles.replyLeft}>
                             <span>{r.phone_number}</span>
-
-                            <span
-                                style={{
-                                    ...styles.badge,
-                                    background:getColor(normalize(r.response))
-                                }}
-                            >
-                                {normalize(r.response)}
+                            <span style={styles.timestamp}>
+                                {formatTime(r.timestamp)}
                             </span>
                         </div>
-                    ))
-                )}
+
+                        <span
+                            style={{
+                                ...styles.badge,
+                                background:getColor(normalize(r.response))
+                            }}
+                        >
+                            {normalize(r.response)}
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            <div style={styles.pagination}>
+                <button disabled={meta.page===1} onClick={()=>setMeta(p=>({...p,page:p.page-1}))}>prev</button>
+                <span>page {meta.page} / {meta.total_pages||1}</span>
+                <button disabled={meta.page===meta.total_pages} onClick={()=>setMeta(p=>({...p,page:p.page+1}))}>next</button>
             </div>
         </div>
     )
 }
 
 function Stat({label,value}){
-    return (
-        <div style={styles.stat}>
-            <p style={{opacity:0.6}}>{label}</p>
-            <h1>{value}</h1>
-        </div>
-    )
+    return <div style={styles.stat}><p style={{opacity:0.6}}>{label}</p><h1>{value}</h1></div>
 }
 
 function Insight({label,value}){
-    return (
-        <div style={styles.insight}>
-            <p style={{opacity:0.6,fontSize:"12px"}}>{label}</p>
-            <h3>{value}</h3>
-        </div>
-    )
+    return <div style={styles.insight}><p style={{opacity:0.6,fontSize:"12px"}}>{label}</p><h3>{value}</h3></div>
 }
 
 const styles={
     container:{maxWidth:"900px",margin:"0 auto"},
-
-    header:{
-        display:"flex",
-        justifyContent:"space-between",
-        alignItems:"center",
-        marginBottom:"20px"
-    },
-
-    actions:{
-        display:"flex",
-        gap:"10px"
-    },
-
+    header:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"},
+    actions:{display:"flex",gap:"10px"},
     back:{background:"#334155",color:"white",padding:"8px 12px",borderRadius:"6px"},
-
-    stop:{
-        background:"#ef4444",
-        color:"white",
-        padding:"8px 14px",
-        borderRadius:"6px",
-        cursor:"pointer"
-    },
-
-    stopDisabled:{
-        background:"#475569",
-        cursor:"not-allowed"
-    },
-
+    stop:{background:"#ef4444",color:"white",padding:"8px 14px",borderRadius:"6px"},
+    stopDisabled:{background:"#475569"},
     export:{background:"#7c3aed",color:"white",padding:"8px 14px",borderRadius:"6px"},
 
-    grid:{
-        display:"grid",
-        gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",
-        gap:"20px",
-        marginTop:"30px"
-    },
-
-    insightGrid:{
-        display:"grid",
-        gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",
-        gap:"20px",
-        marginTop:"20px"
-    },
+    grid:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"20px",marginTop:"20px"},
+    insightGrid:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"20px",marginTop:"20px"},
 
     stat:{background:"#1e293b",padding:"20px",borderRadius:"12px",textAlign:"center"},
     insight:{background:"#020617",padding:"15px",borderRadius:"10px"},
@@ -297,27 +290,34 @@ const styles={
     card:{marginTop:"30px",background:"#1e293b",padding:"20px",borderRadius:"12px"},
 
     breakItem:{display:"flex",alignItems:"center",gap:"10px",marginTop:"10px"},
-    label:{width:"120px",textTransform:"capitalize"},
-
+    label:{width:"120px"},
     barContainer:{flex:1,height:"8px",background:"#020617",borderRadius:"5px"},
     bar:{height:"100%",borderRadius:"5px"},
-
     percent:{width:"90px",textAlign:"right",fontSize:"12px"},
 
-    replyItem:{
-        display:"flex",
-        justifyContent:"space-between",
+    filterRow:{display:"flex",gap:"10px",marginBottom:"15px"},
+
+    select:{
         background:"#020617",
-        padding:"10px",
+        color:"white",
+        border:"1px solid #334155",
         borderRadius:"8px",
-        marginTop:"8px"
+        padding:"10px"
     },
 
-    badge:{
-        padding:"4px 10px",
-        borderRadius:"6px",
-        fontSize:"12px",
+    searchBtn:{
+        background:"#3b82f6",
         color:"white",
-        textTransform:"capitalize"
-    }
+        borderRadius:"8px",
+        padding:"10px 16px"
+    },
+
+    replyItem:{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#020617",padding:"10px 14px",borderRadius:"8px",marginTop:"8px"},
+
+    badge:{minWidth:"90px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"6px",fontSize:"12px",color:"white",textTransform:"capitalize"},
+
+    replyLeft:{display:"flex",flexDirection:"column",gap:"2px"},
+    timestamp:{fontSize:"11px",opacity:0.5},
+
+    pagination:{marginTop:"20px",display:"flex",justifyContent:"center",gap:"20px"}
 }
