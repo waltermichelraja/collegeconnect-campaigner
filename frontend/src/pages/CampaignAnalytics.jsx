@@ -64,6 +64,12 @@ export default function CampaignAnalytics({campaign,onBack}){
         }
     }
 
+    const formatTime=(ts)=>{
+        if(!ts)return "-"
+        const d=new Date(ts)
+        return d.toLocaleString()
+    }
+
     const handleSearch=()=>{
         setSearching(true)
         setMeta(prev=>({...prev,page:1}))
@@ -230,8 +236,19 @@ export default function CampaignAnalytics({campaign,onBack}){
                 <h3>Responses</h3>
                 {replies.map((r,i)=>(
                     <div key={i} style={styles.replyItem}>
-                        <span>{r.phone_number}</span>
-                        <span style={{...styles.badge,background:getColor(normalize(r.response))}}>
+                        <div style={styles.replyLeft}>
+                            <span>{r.phone_number}</span>
+                            <span style={styles.timestamp}>
+                                {formatTime(r.timestamp)}
+                            </span>
+                        </div>
+
+                        <span
+                            style={{
+                                ...styles.badge,
+                                background:getColor(normalize(r.response))
+                            }}
+                        >
                             {normalize(r.response)}
                         </span>
                     </div>
@@ -295,9 +312,12 @@ const styles={
         padding:"10px 16px"
     },
 
-    replyItem:{display:"flex",justifyContent:"space-between",background:"#020617",padding:"10px",borderRadius:"8px",marginTop:"8px"},
+    replyItem:{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#020617",padding:"10px 14px",borderRadius:"8px",marginTop:"8px"},
 
-    badge:{padding:"4px 10px",borderRadius:"6px",fontSize:"12px",color:"white"},
+    badge:{minWidth:"90px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"6px",fontSize:"12px",color:"white",textTransform:"capitalize"},
+
+    replyLeft:{display:"flex",flexDirection:"column",gap:"2px"},
+    timestamp:{fontSize:"11px",opacity:0.5},
 
     pagination:{marginTop:"20px",display:"flex",justifyContent:"center",gap:"20px"}
 }
