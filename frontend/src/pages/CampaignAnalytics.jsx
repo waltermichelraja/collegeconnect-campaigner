@@ -205,9 +205,13 @@ export default function CampaignAnalytics({ campaign: initialCampaign, onBack, t
         failed:    initialCampaign.failed    || 0,
         pending:   0,
     })
-    const [status, setStatus]               = useState(initialCampaign.status)
-    const [replies, setReplies]             = useState([])
+    const [status, setStatus]                 = useState(initialCampaign.status)
+    const [replies, setReplies]               = useState([])
+    const [allReplies, setAllReplies]         = useState([])
     const [repliesLoading, setRepliesLoading] = useState(true)
+    const [page, setPage]                     = useState(1)
+    const [totalPages, setTotalPages]         = useState(1)
+    const pageSize                            = 25
     const [exporting, setExporting]         = useState(false)
     const intervalRef                       = useRef(null)
 
@@ -233,13 +237,16 @@ export default function CampaignAnalytics({ campaign: initialCampaign, onBack, t
     const fetchReplies = async () => {
         try {
             const res = await api.get("/replies/", {
-                params:{campaign_id:initialCampaign.campaign_id}
+                params:{
+                    campaign_id:initialCampaign.campaign_id,
+                    page:page,
+                    page_size:pageSize
+                }
             })
-            const data = Array.isArray(res.data)
-                ? res.data
-                : res.data.results || []
-
+            const data = res.data.results || []
+            const meta = res.data.meta || {}
             setReplies(data)
+            setTotalPages(meta.total_pages || 1)
         } catch(err){
             console.error("Failed to fetch replies:",err)
             setReplies([])
@@ -248,9 +255,27 @@ export default function CampaignAnalytics({ campaign: initialCampaign, onBack, t
         }
     }
 
+    const fetchAllReplies = async () => {
+        try {
+            const res = await api.get("/replies/", {
+                params:{
+                    campaign_id:initialCampaign.campaign_id,
+                    page:1,
+                    page_size:100000
+                }
+            })
+            const data = res.data.results || []
+            setAllReplies(data)
+        } catch(err){
+            console.error("Failed to fetch all replies:",err)
+            setAllReplies([])
+        }
+    }
+
     useEffect(() => {
         fetchProgress()
         fetchReplies()
+        fetchAllReplies()
 
         if (isSending) {
             intervalRef.current = setInterval(() => {
@@ -260,7 +285,7 @@ export default function CampaignAnalytics({ campaign: initialCampaign, onBack, t
         }
 
         return () => clearInterval(intervalRef.current)
-    }, [initialCampaign.campaign_id])
+    }, [initialCampaign.campaign_id, page])
 
     useEffect(() => {
         if (!isSending) clearInterval(intervalRef.current)
@@ -295,7 +320,7 @@ export default function CampaignAnalytics({ campaign: initialCampaign, onBack, t
         status === "stopped"   ? "red"   : "slate"
 
     const badgeClass = `badge badge-${status}`
-    const responseCounts = replies.reduce((acc,r)=>{
+    const responseCounts = allReplies.reduce((acc,r)=>{
         const key = (r.response || "unknown").toString().trim().toLowerCase()
         acc[key] = (acc[key]||0)+1
         return acc
@@ -410,7 +435,36 @@ export default function CampaignAnalytics({ campaign: initialCampaign, onBack, t
                         )}
                     </div>
                 </div>
-                <RepliesTable replies={replies} loading={repliesLoading} />
+                <>
+                    <RepliesTable replies={replies} loading={repliesLoading} />
+                    {totalPages>1&&(
+                        <div style={{
+                            display:"flex",
+                            justifyContent:"center",
+                            alignItems:"center",
+                            gap:"12px",
+                            marginTop:"12px"
+                        }}>
+                            <button
+                                className="btn-ghost btn-sm"
+                                disabled={page===1}
+                                onClick={()=>setPage(p=>p-1)}
+                            >
+                                Prev
+                            </button>
+                            <span style={{fontSize:"12px"}}>
+                                Page {page} / {totalPages}
+                            </span>
+                            <button
+                                className="btn-ghost btn-sm"
+                                disabled={page===totalPages}
+                                onClick={()=>setPage(p=>p+1)}
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
+                </>
             </div>
 
             {/* Live note */}
