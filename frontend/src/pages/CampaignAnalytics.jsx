@@ -1,323 +1,714 @@
-import {useEffect,useState} from "react"
+import { useEffect, useState, useRef } from "react"
 import api from "../api/client"
 
-export default function CampaignAnalytics({campaign,onBack}){
-    const [stats,setStats]=useState({
-        total:0,
-        sent:0,
-        delivered:0,
-        failed:0
-    })
+const COLOR_POOL=[
+    "var(--green)",
+    "#3b82f6",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+    "#14b8a6",
+    "#eab308"
+]
 
-    const [replies,setReplies]=useState([])
-    const [meta,setMeta]=useState({
-        page:1,
-        page_size:10,
-        total:0,
-        total_pages:0
-    })
-
-    const [loading,setLoading]=useState(true)
-    const [stopped,setStopped]=useState(campaign.status==="stopped"||campaign.status==="completed")
-    const [stopping,setStopping]=useState(false)
-
-    const [search,setSearch]=useState("")
-    const [searching,setSearching]=useState(false)
-    const [filterType,setFilterType]=useState("phone")
-
-    useEffect(()=>{
-        fetchData()
-    },[meta.page])
-
-    useEffect(()=>{
-        if(search||stopped)return
-        const interval=setInterval(()=>{
-            fetchData({isPolling:true})
-        },5000)
-        return ()=>clearInterval(interval)
-    },[search,stopped])
-
-    const fetchData=async({isSearch=false,isPolling=false}={})=>{
-        if(isSearch)setSearching(true)
-        try{
-            const progressRes=await api.get(`/progress/?campaign_id=${campaign.campaign_id}`)
-            setStats(progressRes.data||{})
-            if(!isPolling){
-                const params={
-                    campaign_id:campaign.campaign_id,
-                    page:meta.page,
-                    page_size:meta.page_size
-                }
-                if(search){
-                    if(filterType==="phone") params.phone_number=search
-                    if(filterType==="response") params.response=search
-                }
-                const repliesRes=await api.get(`/replies/`,{params})
-                setReplies(repliesRes.data.results||[])
-                setMeta(repliesRes.data.meta||{})
-            }
-        }catch(err){
-            console.error(err)
-        }finally{
-            if(isSearch)setSearching(false)
-            setLoading(false)
-        }
-    }
-
-    const formatTime=(ts)=>{
-        if(!ts)return "-"
-        const d=new Date(ts)
-        return d.toLocaleString()
-    }
-
-    const handleSearch=()=>{
-        setSearching(true)
-        setMeta(prev=>({...prev,page:1}))
-        fetchData({isSearch:true})
-    }
-
-    const normalize=(val)=>(val||"unknown").toString().toLowerCase().trim()
-
-    const colors=[
-        "#ef4444","#22c55e","#3b82f6","#eab308",
-        "#a855f7","#06b6d4","#f97316","#84cc16"
-    ]
-    const getColor=(label)=>{
-        let hash=0
-        for(let i=0;i<label.length;i++){
-            hash=(hash<<5)-hash+label.charCodeAt(i)
-            hash|=0
-        }
-        return colors[Math.abs(hash)%colors.length]
-    }
-
-    const getResponseStats=()=>{
-        const counts={}
-
-        replies.forEach(r=>{
-            const key=normalize(r.response)
-            counts[key]=(counts[key]||0)+1
-        })
-
-        const total=Object.values(counts).reduce((a,b)=>a+b,0)
-
-        return Object.entries(counts)
-            .map(([key,value])=>({
-                label:key,
-                count:value,
-                percent:total?Math.round((value/total)*100):0
-            }))
-            .sort((a,b)=>b.count-a.count)
-    }
-
-    const responseStats=getResponseStats()
-    const topResponse=responseStats[0]?.label||"-"
-
-    const uniqueResponders=new Set(replies.map(r=>r.phone_number)).size
-    const engagement=stats.total
-        ?Math.min(100,Math.round((uniqueResponders/stats.total)*100)):0
-
-    const handleStop=async()=>{
-        if(stopped)return
-        if(!window.confirm("are you sure you want to stop this campaign?"))return
-
-        setStopping(true)
-
-        try{
-            await api.post("/campaign/stop/",{
-                campaign_id:campaign.campaign_id
-            })
-            setStopped(true)
-            campaign.status="stopped"
-        }catch{
-            alert("failed to stop campaign")
-        }finally{
-            setStopping(false)
-        }
-    }
-
-    const handleExport=async()=>{
-        try{
-            const res=await api.get(`/export/?campaign_id=${campaign.campaign_id}`,{responseType:"blob"})
-            const blob=new Blob([res.data],{type:"text/csv"})
-            const url=window.URL.createObjectURL(blob)
-
-            const link=document.createElement("a")
-            link.href=url
-            link.download=`campaign_${campaign.campaign_id}.csv`
-            document.body.appendChild(link)
-            link.click()
-            link.remove()
-        }catch{
-            alert("export failed")
-        }
-    }
-
+function MetricCard({ label, value, sub, accent }) {
     return (
-        <div style={styles.container}>
-
-            <div style={styles.header}>
-                <button style={styles.back} onClick={onBack}>← Back</button>
-
-                <div style={styles.actions}>
-                    <button
-                        style={{
-                            ...styles.stop,
-                            ...(stopped?styles.stopDisabled:{}),
-                            cursor:stopped?"not-allowed":"pointer"
-                        }}
-                        onClick={handleStop}
-                        disabled={stopped||stopping}
-                    >
-                        {stopped?"Campaign Ended":(stopping?"Stopping...":"End Campaign")}
-                    </button>
-
-                    <button style={styles.export} onClick={handleExport}>
-                        ⬇ Export CSV
-                    </button>
-                </div>
+        <div style={styles.metricCard}>
+            <div style={styles.metricLabel}>{label}</div>
+            <div style={{ ...styles.metricValue, ...(accent ? { color: accent } : {}) }}>
+                {value}
             </div>
+            {sub && <div style={styles.metricSub}>{sub}</div>}
+        </div>
+    )
+}
 
-            <div style={styles.grid}>
-                <Stat label="Total" value={stats.total||0}/>
-                <Stat label="Sent" value={stats.sent||0}/>
-                <Stat label="Delivered" value={stats.delivered||0}/>
-                <Stat label="Failed" value={stats.failed||0}/>
-            </div>
+const getResponseColor=(key)=>{
+    const str=(key||"unknown").toString()
+    let hash=0
 
-            <div style={styles.insightGrid}>
-                <Insight label="Top Response" value={topResponse}/>
-                <Insight label="Engagement" value={`${engagement}%`}/>
-                <Insight label="Total Replies" value={meta.total}/>
-            </div>
+    for(let i=0;i<str.length;i++){
+        hash=str.charCodeAt(i)+((hash<<5)-hash)
+    }
 
-            <div style={styles.card}>
-                <h3>Response Breakdown</h3>
+    const index=Math.abs(hash)%COLOR_POOL.length
+    return COLOR_POOL[index]
+}
 
-                {responseStats.map((r,i)=>(
-                    <div key={i} style={styles.breakItem}>
-                        <span style={styles.label}>{r.label}</span>
+function DonutChart({ data }) {
+    const entries = Object.entries(data)
+    const total = entries.reduce((sum,[,v])=>sum+v,0)
+    if(total===0)return null
 
-                        <div style={styles.barContainer}>
-                            <div style={{...styles.bar,width:`${r.percent}%`,background:getColor(r.label)}}/>
-                        </div>
+    const size=120
+    const r=46
+    const cx=size/2
+    const cy=size/2
+    const circ=2*Math.PI*r
 
-                        <span style={styles.percent}>{r.percent}% ({r.count})</span>
-                    </div>
-                ))}
-            </div>
+    let offset=0
 
-            <div style={styles.card}>
-                <div style={styles.filterRow}>
-                    <input
-                        placeholder="search..."
-                        value={search}
-                        onChange={e=>setSearch(e.target.value)}
-                        onKeyDown={e=>{
-                            if(e.key==="Enter"){
-                                handleSearch()
-                            }
-                        }}
-                    />
+    return(
+        <div style={styles.donutWrap}>
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                <circle cx={cx} cy={cy} r={r} fill="none"
+                    stroke="var(--bg-elevated)" strokeWidth="14"/>
 
-                    <select
-                        style={styles.select}
-                        value={filterType}
-                        onChange={e=>setFilterType(e.target.value)}
-                    >
-                        <option value="phone">phone_number</option>
-                        <option value="response">response</option>
-                    </select>
+                {entries.map(([key,value],i)=>{
+                    const pct=value/total
+                    const dash=pct*circ
 
-                    <button style={styles.searchBtn} onClick={handleSearch}>
-                        {searching?"searching...":"search"}
-                    </button>
-                </div>
-                <h3>Responses</h3>
-                {replies.map((r,i)=>(
-                    <div key={i} style={styles.replyItem}>
-                        <div style={styles.replyLeft}>
-                            <span>{r.phone_number}</span>
-                            <span style={styles.timestamp}>
-                                {formatTime(r.timestamp)}
-                            </span>
-                        </div>
+                    const circle=(
+                        <circle key={key}
+                            cx={cx} cy={cy} r={r} fill="none"
+                            stroke={getResponseColor(key)} strokeWidth="14"
+                            strokeDasharray={`${dash} ${circ}`}
+                            strokeDashoffset={-offset}
+                            transform={`rotate(-90 ${cx} ${cy})`}
+                        />
+                    )
 
-                        <span
-                            style={{
-                                ...styles.badge,
-                                background:getColor(normalize(r.response))
-                            }}
-                        >
-                            {normalize(r.response)}
+                    offset+=dash
+                    return circle
+                })}
+
+                <text x={cx} y={cy} textAnchor="middle"
+                    style={{fontSize:"14px",fontWeight:"700",fill:"var(--text-primary)"}}>
+                    {total}
+                </text>
+            </svg>
+
+            <div style={styles.donutLegend}>
+                {entries.map(([key,value],i)=>(
+                    <div key={key} style={styles.legendItem}>
+                        <span style={{
+                            ...styles.legendDot,
+                            background:getResponseColor(key)
+                        }}/>
+                        <span style={styles.legendLabel}>
+                            {key}
+                        </span>
+                        <span style={styles.legendVal}>
+                            {value}
                         </span>
                     </div>
                 ))}
-            </div>
-
-            <div style={styles.pagination}>
-                <button disabled={meta.page===1} onClick={()=>setMeta(p=>({...p,page:p.page-1}))}>prev</button>
-                <span>page {meta.page} / {meta.total_pages||1}</span>
-                <button disabled={meta.page===meta.total_pages} onClick={()=>setMeta(p=>({...p,page:p.page+1}))}>next</button>
             </div>
         </div>
     )
 }
 
-function Stat({label,value}){
-    return <div style={styles.stat}><p style={{opacity:0.6}}>{label}</p><h1>{value}</h1></div>
+function ReplyBadge({ value }) {
+    const color=getResponseColor(value)
+    const bg = color.startsWith("#")? color+"22" : "rgba(148,163,184,0.15)"
+    const label=value?value.charAt(0).toUpperCase()+value.slice(1):"Unknown"
+
+    return (
+        <span style={{
+            display:"inline-flex",
+            alignItems:"center",
+            padding:"3px 10px",
+            borderRadius:"20px",
+            fontSize:"12px",
+            fontWeight:"600",
+            background:bg,
+            color:color,
+        }}>
+            {label}
+        </span>
+    )
 }
 
-function Insight({label,value}){
-    return <div style={styles.insight}><p style={{opacity:0.6,fontSize:"12px"}}>{label}</p><h3>{value}</h3></div>
+function RepliesTable({ replies, loading }) {
+    const [search, setSearch] = useState("")
+    const filtered = Array.isArray(replies) ? replies.filter(r => (r.phone_number||"").includes(search)) : []
+
+    if (loading) {
+        return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {[1,2,3].map(i => (
+                    <div key={i} className="skeleton" style={{ height: "44px", borderRadius: "8px" }} />
+                ))}
+            </div>
+        )
+    }
+
+    if (replies.length === 0) {
+        return <div style={styles.tableEmpty}>No responses yet</div>
+    }
+
+    return (
+        <div>
+            <div style={styles.tableToolbar}>
+                <div style={styles.searchWrap}>
+                    <svg style={styles.searchIcon} width="14" height="14" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="M21 21l-4.35-4.35"/>
+                    </svg>
+                    <input
+                        style={styles.searchInput}
+                        placeholder="Search by phone number..."
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                    />
+                </div>
+                <span style={styles.replyCount}>
+                    {filtered.length} response{filtered.length !== 1 ? "s" : ""}
+                </span>
+            </div>
+
+            <div style={styles.tableWrap}>
+                <table style={styles.table}>
+                    <thead>
+                        <tr>
+                            <th style={styles.th}>#</th>
+                            <th style={styles.th}>Phone number</th>
+                            <th style={styles.th}>Response</th>
+                            <th style={{ ...styles.th, textAlign: "right" }}>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filtered.map((r, i) => (
+                            <tr key={r.phone_number + i}
+                                style={{
+                                    ...styles.tr,
+                                    ...(i === filtered.length - 1 ? { borderBottom: "none" } : {})
+                                }}
+                            >
+                                <td style={{ ...styles.td, color: "var(--text-muted)", width: "48px" }}>
+                                    {i + 1}
+                                </td>
+                                <td style={styles.td}>
+                                    <span style={styles.phone}>{r.phone_number}</span>
+                                </td>
+                                <td style={styles.td}>
+                                    <ReplyBadge value={r.response} />
+                                </td>
+                                <td style={{ ...styles.td, textAlign: "right", color: "var(--text-muted)", fontSize: "12px" }}>
+                                    {new Date(r.timestamp).toLocaleString()}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    )
 }
 
-const styles={
-    container:{maxWidth:"900px",margin:"0 auto"},
-    header:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"},
-    actions:{display:"flex",gap:"10px"},
-    back:{background:"#334155",color:"white",padding:"8px 12px",borderRadius:"6px"},
-    stop:{background:"#ef4444",color:"white",padding:"8px 14px",borderRadius:"6px"},
-    stopDisabled:{background:"#475569"},
-    export:{background:"#7c3aed",color:"white",padding:"8px 14px",borderRadius:"6px"},
+export default function CampaignAnalytics({ campaign: initialCampaign, onBack, toast }) {
+    const [progress, setProgress] = useState({
+        total:     initialCampaign.total     || 0,
+        sent:      initialCampaign.sent      || 0,
+        delivered: initialCampaign.delivered || 0,
+        failed:    initialCampaign.failed    || 0,
+        pending:   0,
+    })
+    const [status, setStatus]                 = useState(initialCampaign.status)
+    const [replies, setReplies]               = useState([])
+    const [allReplies, setAllReplies]         = useState([])
+    const [repliesLoading, setRepliesLoading] = useState(true)
+    const [page, setPage]                     = useState(1)
+    const [totalPages, setTotalPages]         = useState(1)
+    const pageSize                            = 25
+    const [exporting, setExporting]         = useState(false)
+    const intervalRef                       = useRef(null)
 
-    grid:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"20px",marginTop:"20px"},
-    insightGrid:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"20px",marginTop:"20px"},
+    const isSending   = status === "sending"
+    const { total, sent, delivered, failed, pending } = progress
+    const progressPct = total > 0 ? Math.round((delivered / total) * 100) : 0
+    const delivRate   = total > 0 ? Math.round((delivered / total) * 100) : 0
 
-    stat:{background:"#1e293b",padding:"20px",borderRadius:"12px",textAlign:"center"},
-    insight:{background:"#020617",padding:"15px",borderRadius:"10px"},
+    const fetchProgress = async () => {
+        try {
+            const res = await api.get("/progress/", {
+                params: { campaign_id: initialCampaign.campaign_id }
+            })
+            setProgress(res.data)
+            if (res.data.pending === 0 && res.data.sent > 0 && res.data.sent >= res.data.total) {
+                setStatus("completed")
+            }
+        } catch (err) {
+            console.error("Failed to fetch progress:", err)
+        }
+    }
 
-    card:{marginTop:"30px",background:"#1e293b",padding:"20px",borderRadius:"12px"},
+    const fetchReplies = async () => {
+        try {
+            const res = await api.get("/replies/", {
+                params:{
+                    campaign_id:initialCampaign.campaign_id,
+                    page:page,
+                    page_size:pageSize
+                }
+            })
+            const data = res.data.results || []
+            const meta = res.data.meta || {}
+            setReplies(data)
+            setTotalPages(meta.total_pages || 1)
+        } catch(err){
+            console.error("Failed to fetch replies:",err)
+            setReplies([])
+        } finally {
+            setRepliesLoading(false)
+        }
+    }
 
-    breakItem:{display:"flex",alignItems:"center",gap:"10px",marginTop:"10px"},
-    label:{width:"120px"},
-    barContainer:{flex:1,height:"8px",background:"#020617",borderRadius:"5px"},
-    bar:{height:"100%",borderRadius:"5px"},
-    percent:{width:"90px",textAlign:"right",fontSize:"12px"},
+    const fetchAllReplies = async () => {
+        try {
+            const res = await api.get("/replies/", {
+                params:{
+                    campaign_id:initialCampaign.campaign_id,
+                    page:1,
+                    page_size:100000
+                }
+            })
+            const data = res.data.results || []
+            setAllReplies(data)
+        } catch(err){
+            console.error("Failed to fetch all replies:",err)
+            setAllReplies([])
+        }
+    }
 
-    filterRow:{display:"flex",gap:"10px",marginBottom:"15px"},
+    useEffect(() => {
+        fetchProgress()
+        fetchReplies()
+        fetchAllReplies()
 
-    select:{
-        background:"#020617",
-        color:"white",
-        border:"1px solid #334155",
-        borderRadius:"8px",
-        padding:"10px"
+        if (isSending) {
+            intervalRef.current = setInterval(() => {
+                fetchProgress()
+                fetchReplies()
+            }, 5000)
+        }
+
+        return () => clearInterval(intervalRef.current)
+    }, [initialCampaign.campaign_id, page])
+
+    useEffect(() => {
+        if (!isSending) clearInterval(intervalRef.current)
+    }, [isSending])
+
+    const handleExport = async () => {
+        setExporting(true)
+        try {
+            const res = await api.get("/export/", {
+                params: { campaign_id: initialCampaign.campaign_id },
+                responseType: "blob",
+            })
+            const url  = window.URL.createObjectURL(new Blob([res.data]))
+            const link = document.createElement("a")
+            link.href  = url
+            link.setAttribute("download", `${initialCampaign.name}_replies.csv`)
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            window.URL.revokeObjectURL(url)
+            toast?.("Exported successfully", "success")
+        } catch (err) {
+            toast?.("Export failed", "error")
+        } finally {
+            setExporting(false)
+        }
+    }
+
+    const progressColor =
+        status === "completed" ? "green" :
+        status === "sending"   ? "amber" :
+        status === "stopped"   ? "red"   : "slate"
+
+    const badgeClass = `badge badge-${status}`
+    const responseCounts = allReplies.reduce((acc,r)=>{
+        const key = (r.response || "unknown").toString().trim().toLowerCase()
+        acc[key] = (acc[key]||0)+1
+        return acc
+    },{})
+
+    return (
+        <div style={styles.container}>
+
+            {/* Header */}
+            <div style={styles.header}>
+                <button className="btn-ghost btn-sm" onClick={onBack}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    Back
+                </button>
+
+                <div style={styles.headerCenter}>
+                    <div style={styles.titleRow}>
+                        <h2 style={{ margin: 0 }}>{initialCampaign.name}</h2>
+                        <span className={badgeClass}>
+                            {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </span>
+                        {isSending && (
+                            <span style={styles.liveChip}>
+                                <span style={styles.liveDot} />
+                                Live
+                            </span>
+                        )}
+                    </div>
+                    <p style={styles.subtitle}>
+                        Campaign ID: <code style={styles.code}>{initialCampaign.campaign_id}</code>
+                    </p>
+                </div>
+
+                <button
+                    className="btn-ghost btn-sm"
+                    onClick={handleExport}
+                    disabled={exporting || replies.length === 0}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    {exporting ? "Exporting..." : "Export CSV"}
+                </button>
+            </div>
+
+            {/* Progress bar */}
+            <div style={styles.progressSection}>
+                <div style={styles.progressHeader}>
+                    <span style={styles.progressLabel}>
+                        {delivered.toLocaleString()} / {total.toLocaleString()} delivered
+                    </span>
+                    <span style={styles.progressPct}>{progressPct}%</span>
+                </div>
+                <div className="progress-bar" style={{ height: "8px" }}>
+                    <div
+                        className={`progress-fill ${progressColor}`}
+                        style={{ width: `${progressPct}%` }}
+                    />
+                </div>
+            </div>
+
+            {/* Metrics */}
+            <div style={styles.metricsGrid}>
+                <MetricCard label="Total contacts" value={total.toLocaleString()} />
+                <MetricCard label="Messages sent"  value={sent.toLocaleString()} />
+                <MetricCard
+                    label="Delivered"
+                    value={delivered.toLocaleString()}
+                    sub={`${delivRate}% delivery rate`}
+                    accent="var(--green)"
+                />
+                <MetricCard
+                    label="Failed"
+                    value={failed.toLocaleString()}
+                    sub={total > 0 ? `${Math.round((failed / total) * 100)}% of total` : "—"}
+                    accent={failed > 0 ? "var(--red)" : undefined}
+                />
+            </div>
+
+            {/* Response breakdown */}
+            {total > 0 && (
+                <div className="card" style={styles.sectionCard}>
+                    <h4 style={styles.sectionTitle}>Response breakdown</h4>
+                    <DonutChart data={responseCounts} />
+                </div>
+            )}
+
+            {/* Responses table */}
+            <div className="card" style={styles.sectionCard}>
+                <div style={styles.repliesHeader}>
+                    <div>
+                        <h4 style={styles.sectionTitle}>Responses</h4>
+                        {replies.length > 0 && (
+                            <p style={styles.repliesSub}>
+                                {Object.entries(responseCounts).sort((a,b)=>b[1]-a[1]).map(([key,count],i)=>(
+                                    <span key={key}>
+                                        <span style={{fontWeight:"600"}}>
+                                            {count} {key}
+                                        </span>
+                                        {i<Object.keys(responseCounts).length-1?" · ":""}
+                                    </span>
+                                ))}
+                                {" · "}
+                                {replies.length} total
+                            </p>
+                        )}
+                    </div>
+                </div>
+                <>
+                    <RepliesTable replies={replies} loading={repliesLoading} />
+                    {totalPages>1&&(
+                        <div style={{
+                            display:"flex",
+                            justifyContent:"center",
+                            alignItems:"center",
+                            gap:"12px",
+                            marginTop:"12px"
+                        }}>
+                            <button
+                                className="btn-ghost btn-sm"
+                                disabled={page===1}
+                                onClick={()=>setPage(p=>p-1)}
+                            >
+                                Prev
+                            </button>
+                            <span style={{fontSize:"12px"}}>
+                                Page {page} / {totalPages}
+                            </span>
+                            <button
+                                className="btn-ghost btn-sm"
+                                disabled={page===totalPages}
+                                onClick={()=>setPage(p=>p+1)}
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
+                </>
+            </div>
+
+            {/* Live note */}
+            {isSending && (
+                <p style={styles.refreshNote}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                    </svg>
+                    Progress and responses refresh every 5 seconds
+                </p>
+            )}
+        </div>
+    )
+}
+
+const styles = {
+    container: {
+        maxWidth: "860px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "24px",
     },
-
-    searchBtn:{
-        background:"#3b82f6",
-        color:"white",
-        borderRadius:"8px",
-        padding:"10px 16px"
+    header: {
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "16px",
     },
-
-    replyItem:{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#020617",padding:"10px 14px",borderRadius:"8px",marginTop:"8px"},
-
-    badge:{minWidth:"90px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"6px",fontSize:"12px",color:"white",textTransform:"capitalize"},
-
-    replyLeft:{display:"flex",flexDirection:"column",gap:"2px"},
-    timestamp:{fontSize:"11px",opacity:0.5},
-
-    pagination:{marginTop:"20px",display:"flex",justifyContent:"center",gap:"20px"}
+    headerCenter: {
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+    },
+    titleRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        flexWrap: "wrap",
+    },
+    subtitle: {
+        fontSize: "12px",
+        color: "var(--text-muted)",
+    },
+    code: {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        background: "var(--bg-elevated)",
+        padding: "1px 6px",
+        borderRadius: "4px",
+        color: "var(--text-secondary)",
+    },
+    liveChip: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "5px",
+        padding: "2px 10px",
+        borderRadius: "20px",
+        fontSize: "12px",
+        fontWeight: "500",
+        background: "var(--amber-dim)",
+        color: "var(--amber-text)",
+    },
+    liveDot: {
+        width: "6px",
+        height: "6px",
+        borderRadius: "50%",
+        background: "var(--amber)",
+        animation: "pulse 1.4s ease-in-out infinite",
+    },
+    progressSection: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "8px",
+    },
+    progressHeader: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    progressLabel: {
+        fontSize: "13px",
+        color: "var(--text-secondary)",
+    },
+    progressPct: {
+        fontSize: "13px",
+        fontWeight: "600",
+        color: "var(--text-primary)",
+    },
+    metricsGrid: {
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: "12px",
+    },
+    metricCard: {
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-md)",
+        padding: "14px 16px",
+    },
+    metricLabel: {
+        fontSize: "12px",
+        color: "var(--text-muted)",
+        marginBottom: "6px",
+    },
+    metricValue: {
+        fontSize: "24px",
+        fontWeight: "700",
+        color: "var(--text-primary)",
+        lineHeight: "1",
+    },
+    metricSub: {
+        fontSize: "11px",
+        color: "var(--text-muted)",
+        marginTop: "5px",
+    },
+    sectionCard: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "16px",
+    },
+    sectionTitle: {
+        fontSize: "14px",
+        fontWeight: "600",
+        marginBottom: "2px",
+    },
+    repliesHeader: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+    },
+    repliesSub: {
+        fontSize: "12px",
+        color: "var(--text-muted)",
+        marginTop: "2px",
+    },
+    tableToolbar: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: "12px",
+        gap: "12px",
+    },
+    searchWrap: {
+        position: "relative",
+        width: "240px",
+    },
+    searchIcon: {
+        position: "absolute",
+        left: "10px",
+        top: "50%",
+        transform: "translateY(-50%)",
+        color: "var(--text-muted)",
+        pointerEvents: "none",
+    },
+    searchInput: {
+        height: "34px",
+        fontSize: "13px",
+        padding: "0 10px 0 32px",
+    },
+    replyCount: {
+        fontSize: "12px",
+        color: "var(--text-muted)",
+        flexShrink: 0,
+    },
+    tableWrap: {
+        overflowX: "auto",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--border)",
+    },
+    table: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: "13px",
+    },
+    th: {
+        padding: "10px 14px",
+        textAlign: "left",
+        fontSize: "11px",
+        fontWeight: "600",
+        color: "var(--text-muted)",
+        textTransform: "uppercase",
+        letterSpacing: "0.05em",
+        background: "var(--bg-elevated)",
+        borderBottom: "1px solid var(--border)",
+        whiteSpace: "nowrap",
+    },
+    tr: {
+        borderBottom: "1px solid var(--border)",
+    },
+    td: {
+        padding: "11px 14px",
+        color: "var(--text-primary)",
+        verticalAlign: "middle",
+    },
+    phone: {
+        fontFamily: "monospace",
+        fontSize: "13px",
+        color: "var(--text-primary)",
+    },
+    tableEmpty: {
+        padding: "32px",
+        textAlign: "center",
+        color: "var(--text-muted)",
+        fontSize: "13px",
+    },
+    donutWrap: {
+        display: "flex",
+        alignItems: "center",
+        gap: "32px",
+    },
+    donutLegend: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px",
+    },
+    legendItem: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+    },
+    legendDot: {
+        width: "8px",
+        height: "8px",
+        borderRadius: "50%",
+        flexShrink: 0,
+    },
+    legendLabel: {
+        fontSize: "13px",
+        color: "var(--text-secondary)",
+        flex: 1,
+        minWidth: "80px",
+    },
+    legendVal: {
+        fontSize: "13px",
+        fontWeight: "600",
+        color: "var(--text-primary)",
+    },
+    refreshNote: {
+        fontSize: "12px",
+        color: "var(--text-muted)",
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+    },
 }
